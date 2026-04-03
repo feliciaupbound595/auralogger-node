@@ -16,7 +16,7 @@ auralogger <command> [arguments...]
 
 | Command | Args | Purpose |
 |---------|------|---------|
-| `init` | — | Auth with **secret**; when needed, print the **private** `.env` line; two snippets (**`Auralog`** client reading **`NEXT_PUBLIC_AURALOGGER_*`** + **`AuraLog`** server with `ensureConfigured` + `AuraServer.configure`). Shows publishable id/session/styles for you to paste into `NEXT_PUBLIC_*` / `VITE_*` manually (see **`user-docs/environment.md`**). |
+| `init` | — | Auth with **secret**; **copy-paste dotenv block** with `NEXT_PUBLIC_*`, unprefixed publishable keys, and `AURALOGGER_PROJECT_SECRET` when you typed it at the prompt (omitted if already in env); two snippets (**`Auralog`** + **`AuraLog`**). Vite: duplicate values as `VITE_*` (see **`user-docs/environment.md`**). |
 | `server-check` | — | Test WebSocket connectivity (needs project id + secret in env). |
 | `client-check` | — | Same env as **`server-check`** (id + secret + session); opens **`create_browser_logs`** (no secret on the socket, like **`AuraClient`**). |
 | `test-serverlog` | — | Send 5 logs via `AuraServer.log` (production path), then close. |

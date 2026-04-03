@@ -6,7 +6,13 @@ import { loadCliEnvFiles } from "../utility/cli-load-env";
 import { printAside } from "../utility/cli-tone";
 import { resolveApiBaseUrl } from "../../utils/backend-origin";
 import {
+  ENV_NEXT_PUBLIC_PROJECT_ID,
+  ENV_NEXT_PUBLIC_PROJECT_SESSION,
+  ENV_NEXT_PUBLIC_PROJECT_STYLES,
+  ENV_PROJECT_ID,
   ENV_PROJECT_SECRET,
+  ENV_PROJECT_SESSION,
+  ENV_PROJECT_STYLES,
   formatDotenvLine,
   getResolvedProjectId,
   getResolvedSecret,
@@ -135,6 +141,7 @@ function buildAuraClientWrapperSnippet(): string {
     `function ensureConfigured(): void {`,
     `  if (configured) return`,
     ``,
+    `  // You can also use hardcoded strings instead of the env lookups below (avoid committing real values; browser bundles are public).`,
     `  const projectId = process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_ID`,
     `  if (!projectId) {`,
     `    throw new Error('Missing NEXT_PUBLIC_AURALOGGER_PROJECT_ID')`,
@@ -172,6 +179,7 @@ function buildAuraServerWrapperSnippet(): string {
     `function ensureConfigured(): void {`,
     `  if (configured) return`,
     ``,
+    `  // You can also pass a string literal to AuraServer.configure(...) instead of process.env (never commit real secrets).`,
     `  const secret = process.env.${ENV_PROJECT_SECRET}`,
     `  if (!secret) {`,
     `    throw new Error('Missing ${ENV_PROJECT_SECRET}')`,
@@ -249,11 +257,57 @@ function printCodeStory(title: string, snippet: string): void {
   console.log("");
 }
 
+function printCopyPasteEnvBlock(
+  payload: InitConfigPayload,
+  secretWasAlreadyInEnv: boolean,
+): void {
+  const projectId = payload.project_id?.trim() ?? "";
+  const session = payload.session?.trim() ?? "";
+  const stylesJson = JSON.stringify(payload.styles ?? []);
+
+  console.log("");
+  console.log(
+    chalk.bold.hex("#79c0ff")("📋 ") + chalk.bold.white("Copy-paste env block"),
+  );
+  console.log(
+    chalk.dim(
+      "   All keys and values in dotenv form — paste into .env / .env.local. For Vite, duplicate as VITE_AURALOGGER_PROJECT_* with the same values.",
+    ),
+  );
+  console.log("");
+
+  const lines: string[] = [];
+  if (!secretWasAlreadyInEnv) {
+    lines.push(formatDotenvLine(ENV_PROJECT_SECRET, payload.secret_key));
+  }
+  lines.push(formatDotenvLine(ENV_NEXT_PUBLIC_PROJECT_ID, projectId));
+  lines.push(formatDotenvLine(ENV_NEXT_PUBLIC_PROJECT_SESSION, session));
+  lines.push(formatDotenvLine(ENV_NEXT_PUBLIC_PROJECT_STYLES, stylesJson));
+  lines.push(formatDotenvLine(ENV_PROJECT_ID, projectId));
+  lines.push(formatDotenvLine(ENV_PROJECT_SESSION, session));
+  lines.push(formatDotenvLine(ENV_PROJECT_STYLES, stylesJson));
+
+  for (const line of lines) {
+    console.log(chalk.hex("#8b949e")(line));
+  }
+
+  if (secretWasAlreadyInEnv) {
+    console.log("");
+    console.log(
+      chalk.dim("   ") +
+        chalk.white(ENV_PROJECT_SECRET) +
+        chalk.dim(
+          " was already in your environment — omitted above; keep your existing line alongside these.",
+        ),
+    );
+  }
+  console.log("");
+}
+
 function printEnvInstructions(
   payload: InitConfigPayload,
   secretWasAlreadyInEnv: boolean,
 ): void {
-  const secretLine = formatDotenvLine(ENV_PROJECT_SECRET, payload.secret_key);
   const styleCount = Array.isArray(payload.styles) ? payload.styles.length : 0;
   const stylesJsonLen = JSON.stringify(payload.styles).length;
 
@@ -283,19 +337,16 @@ function printEnvInstructions(
   } else {
     console.log(
       chalk.gray(
-        "   You typed the secret at the prompt just now. Add a line like the one ",
+        "   You typed the secret at the prompt. Use the ",
       ) +
-        chalk.bold.gray("below") +
+        chalk.bold.white("copy-paste env block") +
         chalk.gray(
-          " to a gitignored `.env` (or your host secret store) so future CLI runs and AuraServer can authenticate:",
-        ),
-    );
-    console.log("");
-    console.log(chalk.hex("#8b949e")(secretLine));
-    console.log(
-      chalk.dim("   ↑ Name is ") +
+          " below (includes ",
+        ) +
         chalk.white(ENV_PROJECT_SECRET) +
-        chalk.dim(", value is what's in the quotes."),
+        chalk.gray(
+          ") in a gitignored `.env` or your host secret store so future CLI runs and AuraServer can authenticate.",
+        ),
     );
     printAside("🕷️", "Parker: I talk when I'm stressed too — carve it into .env before the wrong person hears.");
   }
@@ -320,6 +371,8 @@ function printEnvInstructions(
       chalk.dim(` (${stylesJsonLen} chars of JSON vibes)`),
   );
   printAside("🕶️", "Fury: \"There was an idea…\" — two files: Auralog vs AuraLog, different battle suits.");
+
+  printCopyPasteEnvBlock(payload, secretWasAlreadyInEnv);
 
   console.log("");
   printTwoAuralogExplainer();

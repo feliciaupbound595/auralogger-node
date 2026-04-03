@@ -22,7 +22,7 @@
 ## CLI
 
 - Entry: **`src/cli/bin/auralogger.ts`** → `loadCliEnvFiles()` then subcommands.
-- **`init`**: `POST /api/proj_auth`, prints secret line when needed, **Step 2** shows publishable id/session/styles; snippets are **`Auralog`** (reads **`NEXT_PUBLIC_AURALOGGER_*`**) and **`AuraLog`** (`ensureConfigured` + **`AuraServer.configure(secret)`**).
+- **`init`**: `POST /api/proj_auth`, **Step 2** shows publishable id/session/styles, then a **copy-paste dotenv block** (`NEXT_PUBLIC_*`, unprefixed trio, secret when typed at prompt); snippets are **`Auralog`** (reads **`NEXT_PUBLIC_AURALOGGER_*`**) and **`AuraLog`** (`ensureConfigured` + **`AuraServer.configure(secret)`**).
 - Recommended invocation for apps: **`npx auralogger-cli …`** (project-scoped; see readme).
 
 ## Build

@@ -49,7 +49,7 @@ Resolution order for each publishable field is: **`NEXT_PUBLIC_*`**, then **`VIT
 
 1. Run **`auralogger init`**.
 2. If **`AURALOGGER_PROJECT_SECRET`** is unset, the CLI prompts for it.
-3. The CLI prints a **private** `AURALOGGER_PROJECT_SECRET` line for `.env` when you typed the secret at the prompt, then two snippets (**separate files**): **`Auralog`** (browser / frontend: reads **`NEXT_PUBLIC_AURALOGGER_*`** via `AuraClient.configure`, no secret) vs **`AuraLog`** (server / backend / CLI, reads **`AURALOGGER_PROJECT_SECRET`** from env). It does **not** auto-print `NEXT_PUBLIC_*` / `VITE_*` lines — copy id, session, and styles from Step 2 into those keys yourself (see the example block below).
+3. The CLI shows a human-readable **Step 2** trio (id, session, styles), then a **copy-paste dotenv block** with `NEXT_PUBLIC_*` and unprefixed publishable keys (and `AURALOGGER_PROJECT_SECRET` when you typed the secret at the prompt — omitted if it was already in the environment). Then it prints two snippets (**separate files**): **`Auralog`** (browser / frontend: reads **`NEXT_PUBLIC_AURALOGGER_*`** via `AuraClient.configure`, no secret) vs **`AuraLog`** (server / backend / CLI, reads **`AURALOGGER_PROJECT_SECRET`** from env). For Vite, duplicate the same values under `VITE_*` names (see the example block below).
 4. Put the **secret** in server-side env (`.env` gitignored, host secret store, CI secrets). Put the **publishable** id, session, and styles into **`NEXT_PUBLIC_*`** / **`VITE_*`** for the browser helper (same logical values as Step 2 / **`auralogger init`** display).
 
 **`await AuraServer.syncFromSecret(secret)`** (Node) can fill id, session, and styles **in memory** from the API without storing them in `.env`.
@@ -88,7 +88,7 @@ NEXT_PUBLIC_AURALOGGER_PROJECT_STYLES="[{\"default\":{\"icon\":\"🗒️\"}}]"
 
 | Context | Private secret | Publishable three |
 |---------|----------------|-------------------|
-| **`auralogger init`** | Optional in env, else prompt | Printed after auth |
+| **`auralogger init`** | Optional in env, else prompt | Step 2 trio + copy-paste dotenv lines after auth |
 | **`auralogger server-check`** | Required in env | Project id required (session/styles not required for the check itself) |
 | **`auralogger client-check`** | Required (validates same shell as **`server-check`**; not sent on the WS) | Project id + session (same as **`server-check`**) |
 | **`auralogger get-logs`** | Required in env or at prompt | **`STYLES`** optional in env: if unset, CLI fetches them via **`proj_auth`** (same as **`init`**) for this run; use **`auralogger init`** to persist copy-paste lines |
