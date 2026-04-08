@@ -4,7 +4,11 @@ import { resolveApiBaseUrl } from "../../utils/backend-origin";
 import { tryParseResolvedStyles } from "../../utils/env-config";
 import { loadCliEnvFiles } from "../utility/cli-load-env";
 import { printAside } from "../utility/cli-tone";
-import { fetchProjAuthConfig, resolveSecretForInit } from "./init";
+import {
+  fetchProjAuthConfig,
+  resolveProjectTokenForInit,
+  resolveUserSecretForInit,
+} from "./init";
 import { normalizeAndValidateFilters } from "./get-logs-filters";
 import { parseErrorBody } from "../../utils/http-utils";
 import { printLog } from "./log-print";
@@ -32,7 +36,8 @@ function isLogRow(value: unknown): value is LogRow {
 
 async function fetchLogsWithFallback(
   baseUrl: string,
-  secret: string,
+  projectToken: string,
+  userSecret: string,
   filters: unknown,
 ): Promise<LogsResponseBody> {
   const route = `${baseUrl}/api/logs`;
@@ -41,7 +46,8 @@ async function fetchLogsWithFallback(
   const requestInit: RequestInit = {
     method: "POST",
     headers: {
-      secret,
+      secret: projectToken,
+      user_secret: userSecret,
       "content-type": "application/json",
     },
     body: requestBody,
@@ -85,7 +91,8 @@ export function formatGetLogsHelp(): string {
 }
 
 export async function runGetLogsCore(
-  secret: string,
+  projectToken: string,
+  userSecret: string,
   configStyles: unknown,
   argv: string[],
 ): Promise<void> {
@@ -99,7 +106,7 @@ export async function runGetLogsCore(
   }
 
   const baseUrl = resolveApiBaseUrl();
-  const body = await fetchLogsWithFallback(baseUrl, secret, filters);
+  const body = await fetchLogsWithFallback(baseUrl, projectToken, userSecret, filters);
 
   const logsRaw = body.logs;
   const logs = Array.isArray(logsRaw) ? logsRaw : [];
@@ -130,15 +137,20 @@ export async function runGetLogsCore(
   }
 }
 
-async function resolveGetLogsAuth(): Promise<{ secret: string; styles: unknown }> {
+async function resolveGetLogsAuth(): Promise<{
+  projectToken: string;
+  userSecret: string;
+  styles: unknown;
+}> {
   loadCliEnvFiles();
-  const secret = await resolveSecretForInit();
+  const projectToken = await resolveProjectTokenForInit();
+  const userSecret = await resolveUserSecretForInit();
   const stylesFromEnv = tryParseResolvedStyles();
   if (stylesFromEnv !== null) {
-    return { secret, styles: stylesFromEnv };
+    return { projectToken, userSecret, styles: stylesFromEnv };
   }
 
-  const payload = await fetchProjAuthConfig(secret);
+  const payload = await fetchProjAuthConfig(projectToken);
   console.log(
     chalk.hex("#79c0ff")("🎨 ") +
       chalk.white("No styles in your shell — using freshly fetched styling for this run."),
@@ -147,7 +159,7 @@ async function resolveGetLogsAuth(): Promise<{ secret: string; styles: unknown }
     "🦾",
     "Rhodey: Next time, baby. — run init when you want the full War Machine paint on styles.",
   );
-  return { secret, styles: payload.styles };
+  return { projectToken, userSecret, styles: payload.styles };
 }
 
 export async function runGetLogs(argv: string[]): Promise<void> {
@@ -158,6 +170,6 @@ export async function runGetLogs(argv: string[]): Promise<void> {
     "🕶️",
     "Fury: Last time I trusted someone I lost an eye — you steer the filters; secrets hide in headers.",
   );
-  const { secret, styles } = await resolveGetLogsAuth();
-  await runGetLogsCore(secret, styles, argv);
+  const { projectToken, userSecret, styles } = await resolveGetLogsAuth();
+  await runGetLogsCore(projectToken, userSecret, styles, argv);
 }

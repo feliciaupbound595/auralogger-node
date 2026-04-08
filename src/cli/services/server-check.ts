@@ -25,7 +25,8 @@ function createIsoTimestampWithMicroseconds(epochMs: number): string {
 
 export async function runServerCheck(): Promise<void> {
   loadCliEnvFiles();
-  const { secret, projectId, session } = await resolveProjectContextForCliChecks();
+  const { projectToken, userSecret, projectId, session } =
+    await resolveProjectContextForCliChecks();
 
   const wsUrl = buildWsUrl(projectId);
   console.log(
@@ -37,7 +38,10 @@ export async function runServerCheck(): Promise<void> {
   printAside("🛡️", "Rogers: Shield's up — your secret is the vibranium badge on this socket.");
   await new Promise<void>((resolve, reject) => {
     const ws = new WebSocket(wsUrl, {
-      headers: { secret },
+      headers: {
+        secret: projectToken,
+        user_secret: userSecret,
+      },
     });
 
     const timeout = setTimeout(() => {

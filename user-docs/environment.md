@@ -1,13 +1,13 @@
 # Environment variables
 
-*The filing cabinet: one locked drawer for the **secret**, three labeled folders you can safely show the browser (if you’re careful how). Names below are not suggestions — they’re the keys the CLI and SDK actually read.*
+*The filing cabinet: two locked drawers for private creds, plus three labeled folders you can safely show the browser (if you’re careful how). Names below are not suggestions — they’re the keys the CLI and SDK actually read.*
 
 Two classes of values:
 
-- **Private** — exactly **`AURALOGGER_PROJECT_SECRET`**. This is the only credential. It becomes the HTTP header **`secret`** on authenticated calls and must **never** appear in browser bundles, public repos, or `NEXT_PUBLIC_*` / `VITE_*` keys.
+- **Private** — **`AURALOGGER_PROJECT_TOKEN`** and **`AURALOGGER_USER_SECRET`**. Project token is sent as HTTP/WS header **`secret`**. User secret is sent as **`user_secret`** on routes that require both creds. Do not expose either one in browser bundles, public repos, or `NEXT_PUBLIC_*` / `VITE_*` keys.
 - **Publishable** — **`project_id`**, **`session`**, and **`styles`** (the three non-secret fields from `auralogger init`). They are not API secrets. You still choose **where** they live: server-only `.env` vs client-visible env keys for frontends.
 
-The CLI and **`AuraServer`** need the **secret** plus those three for full streaming. **`AuraClient`** uses **only** the publishable three (via env as your bundler exposes them).
+The CLI and **`AuraServer`** need private creds plus those three for full streaming. **`AuraClient`** uses **only** the publishable three (via env as your bundler exposes them), and never reads `AURALOGGER_USER_SECRET`.
 
 ---
 
@@ -15,13 +15,14 @@ The CLI and **`AuraServer`** need the **secret** plus those three for full strea
 
 | Variable | Who uses it | Notes |
 |----------|-------------|--------|
-| `AURALOGGER_PROJECT_SECRET` | CLI (`init`, `get-logs`, checks), **`AuraServer`**, any code that calls authenticated HTTP or `create_log` WebSocket | **Server-side / CI secrets only.** Not read by **`AuraClient`**. There are no aliases (e.g. `AURALOGGER_SECRET_KEY` is **not** supported). |
+| `AURALOGGER_PROJECT_TOKEN` | CLI (`init`, `get-logs`, checks), **`AuraServer`**, any code that calls authenticated HTTP or `create_log` WebSocket | **Server-side / CI secrets only.** Sent on the wire as header `secret`. Not read by **`AuraClient`**. |
+| `AURALOGGER_USER_SECRET` | CLI (`init`, `get-logs`, checks), **`AuraServer`**, any route/socket that requires user auth with project auth | **Server-side / CI secrets only.** Sent on the wire as `user_secret` where required. Never exposed to **`AuraClient`**. |
 
 ---
 
 ## Publishable variables (exact base names)
 
-These identify the project and style logs. They are **not** the project secret.
+These identify the project and style logs. They are **not** private credentials.
 
 | Role | Primary env keys (Node / server `.env`) | In client bundles (must be exposed by the framework) |
 |------|----------------------------------------|--------------------------------------------------------|
@@ -37,7 +38,7 @@ Resolution order for each publishable field is: **`NEXT_PUBLIC_*`**, then **`VIT
 
 **`AuraClient` (browser):** reads **`process.env`** only, for the **publishable** keys above (typically the `NEXT_PUBLIC_*` or `VITE_*` names your bundler inlines). No `.env` file reads in the browser.
 
-**`AuraServer` (Node):** reads **`process.env`**; on first `AuraServer.log` or `syncFromSecret` it may **once** load **`.env`** and **`.env.local`** from **`process.cwd()`** (Node only). The **secret** must only exist in environments you treat as private.
+**`AuraServer` (Node):** reads **`process.env`**; on first `AuraServer.log` or `syncFromSecret` it may **once** load **`.env`** and **`.env.local`** from **`process.cwd()`** (Node only). Private creds must only exist in environments you treat as private.
 
 **CLI:** loads **`.env`** / **`.env.local`** from cwd before each command.
 
@@ -48,11 +49,11 @@ Resolution order for each publishable field is: **`NEXT_PUBLIC_*`**, then **`VIT
 *Same script **`init`** narrates in the terminal — this is the static version for bookmarking.*
 
 1. Run **`auralogger init`**.
-2. If **`AURALOGGER_PROJECT_SECRET`** is unset, the CLI prompts for it.
-3. The CLI shows a human-readable **Step 2** trio (id, session, styles), then a **copy-paste dotenv block** with `NEXT_PUBLIC_*` and unprefixed publishable keys (and `AURALOGGER_PROJECT_SECRET` when you typed the secret at the prompt — omitted if it was already in the environment). Then it prints two snippets (**separate files**): **`Auralog`** (browser / frontend: reads **`NEXT_PUBLIC_AURALOGGER_*`** via `AuraClient.configure`, no secret) vs **`AuraLog`** (server / backend / CLI, reads **`AURALOGGER_PROJECT_SECRET`** from env). For Vite, duplicate the same values under `VITE_*` names (see the example block below).
-4. Put the **secret** in server-side env (`.env` gitignored, host secret store, CI secrets). Put the **publishable** id, session, and styles into **`NEXT_PUBLIC_*`** / **`VITE_*`** for the browser helper (same logical values as Step 2 / **`auralogger init`** display).
+2. If **`AURALOGGER_PROJECT_TOKEN`** or **`AURALOGGER_USER_SECRET`** is unset, the CLI prompts for missing values.
+3. The CLI shows a human-readable **Step 2** trio (id, session, styles), then a **copy-paste dotenv block** with `NEXT_PUBLIC_*`, unprefixed publishable keys, and private lines (`AURALOGGER_PROJECT_TOKEN`, `AURALOGGER_USER_SECRET`) when entered at prompt. Then it prints two snippets (**separate files**): **`Auralog`** (browser / frontend: reads **`NEXT_PUBLIC_AURALOGGER_*`**) vs **`AuraLog`** (server / backend / CLI, reads token + user secret from env). For Vite, duplicate publishable values under `VITE_*` names.
+4. Put private creds in server-side env (`.env` gitignored, host secret store, CI secrets). Put publishable id/session/styles into **`NEXT_PUBLIC_*`** / **`VITE_*`** for the browser helper.
 
-**`await AuraServer.syncFromSecret(secret)`** (Node) can fill id, session, and styles **in memory** from the API without storing them in `.env`.
+**`await AuraServer.syncFromSecret(projectToken, userSecret?)`** (Node) can fill id, session, and styles **in memory** from the API without storing publishable values in `.env`.
 
 ---
 
@@ -60,11 +61,12 @@ Resolution order for each publishable field is: **`NEXT_PUBLIC_*`**, then **`VIT
 
 *Plastic demo props — your real **`STYLES`** line will be long; copy from **`auralogger init`**, don’t improvise JSON by hand unless you like papercuts.*
 
-**Server-only fragment** (e.g. `.env` — keep **`AURALOGGER_PROJECT_SECRET`** out of any file that ships to clients):
+**Server-only fragment** (e.g. `.env` — keep private creds out of any file that ships to clients):
 
 ```env
 # PRIVATE — never expose to browser bundles or public repos
-AURALOGGER_PROJECT_SECRET="your-secret-here"
+AURALOGGER_PROJECT_TOKEN="your-project-token"
+AURALOGGER_USER_SECRET="your-user-secret"
 
 # Publishable — fine on the server; same values can appear as NEXT_PUBLIC_* / VITE_* for the client
 AURALOGGER_PROJECT_ID="proj_example_123"
@@ -72,7 +74,7 @@ AURALOGGER_PROJECT_SESSION="session-token-here"
 AURALOGGER_PROJECT_STYLES="[{\"default\":{\"icon\":\"🗒️\"}}]"
 ```
 
-**Browser / Vite / Next client env** should use **only** the prefixed lines from `init` (no `AURALOGGER_PROJECT_SECRET`):
+**Browser / Vite / Next client env** should use **only** the prefixed publishable lines from `init` (no private creds):
 
 ```env
 NEXT_PUBLIC_AURALOGGER_PROJECT_ID="proj_example_123"
@@ -86,24 +88,24 @@ NEXT_PUBLIC_AURALOGGER_PROJECT_STYLES="[{\"default\":{\"icon\":\"🗒️\"}}]"
 
 ## Commands vs runtime
 
-| Context | Private secret | Publishable three |
+| Context | Private creds | Publishable three |
 |---------|----------------|-------------------|
 | **`auralogger init`** | Optional in env, else prompt | Step 2 trio + copy-paste dotenv lines after auth |
-| **`auralogger server-check`** | Required in env | Project id required (session/styles not required for the check itself) |
-| **`auralogger client-check`** | Required (validates same shell as **`server-check`**; not sent on the WS) | Project id + session (same as **`server-check`**) |
-| **`auralogger get-logs`** | Required in env or at prompt | **`STYLES`** optional in env: if unset, CLI fetches them via **`proj_auth`** (same as **`init`**) for this run; use **`auralogger init`** to persist copy-paste lines |
-| **`AuraServer`** | Required (`configure` / env / `syncFromSecret`) | Loaded from **`proj_auth`** after secret (not required in `.env`) |
+| **`auralogger server-check`** | Project token + user secret in env | Project id required (session/styles not required for the check itself) |
+| **`auralogger client-check`** | Not sent on browser socket; context still resolved via CLI path | Project id + session (same as **`server-check`**) |
+| **`auralogger get-logs`** | Project token + user secret required in env or prompt | **`STYLES`** optional in env: if unset, CLI fetches them via **`proj_auth`** (same as **`init`**) for this run; use **`auralogger init`** to persist copy-paste lines |
+| **`AuraServer`** | Required (`configure` / env / `syncFromSecret`) | Loaded from **`proj_auth`** after token auth (not required in `.env`) |
 | **`AuraClient`** | **Never** | Id required; session/styles optional with fallbacks |
 
 ---
 
 ## Troubleshooting
 
-*When the universe says “no” — usually cwd, JSON, or a shy secret.*
+*When the universe says “no” — usually cwd, JSON, or missing private creds.*
 
 - **`server-check` / variable missing** — Run from the directory that contains your `.env`, or export vars in the shell (`process.cwd()`).
 - **Styles errors** — Value must be valid JSON array string; refresh from **`auralogger init`**.
-- **`AuraServer` console-only** — Ensure **`AURALOGGER_PROJECT_SECRET`** (or call **`syncFromSecret` / `configure`**) so **`proj_auth`** can run; the **`AuraLog`** helper reads the secret from env once.
+- **`AuraServer` console-only** — Ensure **`AURALOGGER_PROJECT_TOKEN`** and **`AURALOGGER_USER_SECRET`** (or call **`syncFromSecret` / `configure`**) so auth + ingest can run; `proj_auth` itself remains token-only (`secret` header).
 - **Client bundle + `ws`** — Use **`auralogger-cli/client`**; the package maps **`./server`** to a browser stub so `ws` is not pulled in for `AuraServer` imports on the client.
 
 ### Advanced overrides (contributors / self-hosted backends)

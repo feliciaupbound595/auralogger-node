@@ -6,11 +6,14 @@ const STUB_MESSAGE =
  * Prevents importing ws in client builds while keeping the same export name.
  */
 export class AuraServer {
-  static configure(_secret: string): void {
+  static configure(_projectToken: string, _userSecret?: string): void {
     // no-op in the browser stub
   }
 
-  static async syncFromSecret(_secret: string): Promise<void> {
+  static async syncFromSecret(
+    _projectToken: string,
+    _userSecret?: string,
+  ): Promise<void> {
     throw new Error(STUB_MESSAGE);
   }
 

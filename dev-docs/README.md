@@ -16,13 +16,13 @@
 
 ## Current package behavior (high level)
 
-- **`AuraServer`** (Node, `auralogger-cli/server`): uses `ws`, authenticates server ingest with **`AURALOGGER_PROJECT_SECRET`**. After `configure(secret)` / env secret, id, session, and styles typically come from **`POST /api/proj_auth`** (not always all four in `.env`). Terminal output uses **`chalk`** when styles resolve. Browser bundles that import `./server` get **`server.browser.ts`** (stub).
-- **`AuraClient`** (browser-safe, `auralogger-cli/client`): uses the runtime **global `WebSocket`**, **no secret**. Connects to **`/{project_id}/create_browser_logs`**. Configure via **`AuraClient.configure`** (often from **`NEXT_PUBLIC_AURALOGGER_*`** in app env). Local preview uses DevTools console styling when styles resolve; malformed config falls back to plain lines. Socket send uses browser-safe paths (no Node-only `ws.once.bind` patterns).
+- **`AuraServer`** (Node, `auralogger-cli/server`): uses `ws`, authenticates server ingest with **`AURALOGGER_PROJECT_TOKEN`** + **`AURALOGGER_USER_SECRET`** where required. `POST /api/proj_auth` remains token-only (`secret` header). After configure/env resolution, id, session, and styles typically come from **`POST /api/proj_auth`** (not always all publishable vars in `.env`). Terminal output uses **`chalk`** when styles resolve. Browser bundles that import `./server` get **`server.browser.ts`** (stub).
+- **`AuraClient`** (browser-safe, `auralogger-cli/client`): uses the runtime **global `WebSocket`**, **no user secret**. Connects to **`/{project_id}/create_browser_logs`**. Configure via **`AuraClient.configure`** (often from **`NEXT_PUBLIC_AURALOGGER_*`** in app env). Local preview uses DevTools console styling when styles resolve; malformed config falls back to plain lines. Socket send uses browser-safe paths (no Node-only `ws.once.bind` patterns).
 
 ## CLI
 
 - Entry: **`src/cli/bin/auralogger.ts`** → `loadCliEnvFiles()` then subcommands.
-- **`init`**: `POST /api/proj_auth`, **Step 2** shows publishable id/session/styles, then a **copy-paste dotenv block** (`NEXT_PUBLIC_*`, unprefixed trio, secret when typed at prompt); snippets are **`Auralog`** (reads **`NEXT_PUBLIC_AURALOGGER_*`**) and **`AuraLog`** (`ensureConfigured` + **`AuraServer.configure(secret)`**).
+- **`init`**: `POST /api/proj_auth` with token-only `secret` header, **Step 2** shows publishable id/session/styles, then a **copy-paste dotenv block** (`NEXT_PUBLIC_*`, unprefixed trio, `AURALOGGER_PROJECT_TOKEN` + `AURALOGGER_USER_SECRET` when typed at prompt); snippets are **`Auralog`** (reads **`NEXT_PUBLIC_AURALOGGER_*`**) and **`AuraLog`** (`ensureConfigured` + **`AuraServer.configure(projectToken, userSecret)`**).
 - Recommended invocation for apps: **`npx auralogger-cli …`** (project-scoped; see readme).
 
 ## Build

@@ -48,5 +48,5 @@
 
 ## Init / config surface
 
-- `**src/cli/services/init.ts**` exports helpers such as `**resolveSecretForInit**` / `**resolveProjectContextForCliChecks**` for other CLI commands that need `**proj_auth**`.
+- `**src/cli/services/init.ts**` exports helpers such as `**resolveProjectTokenForInit**`, `**resolveUserSecretForInit**`, and `**resolveProjectContextForCliChecks**` for other CLI commands that need `**proj_auth**` and authenticated routes.
 

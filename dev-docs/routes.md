@@ -21,15 +21,15 @@ Routes used by the Node CLI/SDK and where to update them.
 ### `POST /api/proj_auth`
 
 - **Used by:** **`auralogger init`**, **`AuraServer`** sync path (via shared fetch helpers in **`cli/services/init.ts`** and server log)
-- **Purpose:** authenticate with secret; receive project id, session, styles
-- **Header:** **`secret`** (project secret — **`AURALOGGER_PROJECT_SECRET`** or equivalent)
+- **Purpose:** authenticate with project token; receive project id, session, styles
+- **Header:** **`secret`** (project token from **`AURALOGGER_PROJECT_TOKEN`**)
 
 ### `POST /api/logs`
 
 - **Used by:** **`auralogger get-logs`**
 - **File:** **`src/cli/services/get-logs.ts`**
 - **Purpose:** fetch logs with filter payload
-- **Header:** **`secret`**
+- **Header:** **`secret`** + **`user_secret`**
 - **Body:** `{ filters: [...] }`
 
 ---
@@ -42,7 +42,7 @@ Routes used by the Node CLI/SDK and where to update them.
   - **`AuraServer`** (**`src/server/server-log.ts`**)
   - **`auralogger server-check`** (**`src/cli/services/server-check.ts`**)
   - **`auralogger test-serverlog`** (**`src/cli/services/test-logger.ts`**)
-- **Auth:** authenticated (secret as required by server implementation)
+- **Auth:** authenticated (`secret` + `user_secret` as required by server implementation)
 
 ### `/{project_id}/create_browser_logs`
 

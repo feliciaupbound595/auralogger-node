@@ -8,19 +8,20 @@
 - **Then** a log line is printed (styled in terminal when styles resolve; otherwise plain)
 - **And** failures to reach the backend do not crash the process (errors surface as console messages / non-fatal paths)
 
-### Scenario: streaming needs a usable secret path
+### Scenario: streaming needs usable token + user-secret paths
 
-- **Given** **`AURALOGGER_PROJECT_SECRET`** is missing and **`AuraServer`** was not configured with a non-empty secret
+- **Given** **`AURALOGGER_PROJECT_TOKEN`** or **`AURALOGGER_USER_SECRET`** is missing and **`AuraServer`** was not configured with usable values
 - **When** the user calls **`AuraServer.log(...)`**
 - **Then** logs still print locally where applicable
-- **And** streaming / **`proj_auth`** does not succeed without a secret (console-only or error messaging per implementation)
+- **And** streaming does not succeed without both credentials on routes that require both (console-only or error messaging per implementation)
 
 ### Scenario: after configure, backend metadata can come from API
 
-- **Given** a valid project secret (**`configure(secret)`** or env) so **`proj_auth`** can run
+- **Given** a valid project token (**`configure(projectToken, userSecret?)`** or env) so **`proj_auth`** can run
 - **When** the user calls **`AuraServer.log(...)`**
 - **Then** the SDK may obtain id, session, and styles from **`POST /api/proj_auth`** without all four **`AURALOGGER_PROJECT_*`** variables present in `.env`
-- **And** when the socket is ready, payloads go to **`/{project_id}/create_log`** with auth as implemented in **`server-log.ts`**
+- **And** `proj_auth` uses token-only header `secret`
+- **And** when the socket is ready, payloads go to **`/{project_id}/create_log`** with auth as implemented in **`server-log.ts`** (project token + user secret where required)
 
 ## Feature: browser logs (`AuraClient`)
 
@@ -35,7 +36,7 @@
 - **Given** a resolvable **project id** (configure or **`NEXT_PUBLIC_*`** / **`VITE_*`** / unprefixed env per **`env-config.ts`**)
 - **When** **`AuraClient.log`** opens a socket
 - **Then** it targets **`/{project_id}/create_browser_logs`**
-- **And** it does not send the project secret
+- **And** it does not send the user secret
 - **And** payload shape matches server ingest expectations (type, message, session, **`created_at`**, optional location / data)
 
 ### Scenario: local preview tolerates bad style config
@@ -47,25 +48,25 @@
 
 ## Feature: CLI
 
-### Scenario: `init` produces secret + snippets
+### Scenario: `init` produces token/user-secret + snippets
 
 - **Given** the user runs **`auralogger init`**
 - **When** the CLI authenticates via **`POST /api/proj_auth`**
-- **Then** it prints a **`AURALOGGER_PROJECT_SECRET`** line when the secret was not already in env
+- **Then** it prints **`AURALOGGER_PROJECT_TOKEN`** and **`AURALOGGER_USER_SECRET`** lines when they were not already in env
 - **And** it shows publishable id / session / styles for copying into **`NEXT_PUBLIC_*`** / **`VITE_*`**
-- **And** it prints **`Auralog`** (env-driven **`AuraClient.configure`**) and **`AuraLog`** (**`AuraServer.configure(secret)`**) snippets for separate files
+- **And** it prints **`Auralog`** (env-driven **`AuraClient.configure`**) and **`AuraLog`** (**`AuraServer.configure(projectToken, userSecret)`**) snippets for separate files
 
 ### Scenario: `server-check` hits authenticated ingest WS
 
-- **Given** project id + secret in env
+- **Given** project id + project token + user secret in env
 - **When** the user runs **`auralogger server-check`**
 - **Then** it validates connectivity toward **`/{project_id}/create_log`** (authenticated)
 
 ### Scenario: `client-check` hits browser ingest WS
 
-- **Given** the same shell expectations as **`server-check`** (including secret in env for parity checks; not sent on the browser socket)
+- **Given** the same shell expectations as **`server-check`** for project/session context (user secret is not sent on the browser socket)
 - **When** the user runs **`auralogger client-check`**
-- **Then** it opens **`/{project_id}/create_browser_logs`** without secret on the wire
+- **Then** it opens **`/{project_id}/create_browser_logs`** without `user_secret` on the wire
 
 ### Scenario: `test-serverlog` / `test-clientlog` smoke paths
 

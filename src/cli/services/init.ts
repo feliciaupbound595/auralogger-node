@@ -10,13 +10,15 @@ import {
   ENV_NEXT_PUBLIC_PROJECT_SESSION,
   ENV_NEXT_PUBLIC_PROJECT_STYLES,
   ENV_PROJECT_ID,
-  ENV_PROJECT_SECRET,
+  ENV_PROJECT_TOKEN,
   ENV_PROJECT_SESSION,
   ENV_PROJECT_STYLES,
+  ENV_USER_SECRET,
   formatDotenvLine,
   getResolvedProjectId,
-  getResolvedSecret,
+  getResolvedProjectToken,
   getResolvedSession,
+  getResolvedUserSecret,
   tryParseResolvedStyles,
 } from "../../utils/env-config";
 import { parseErrorBody } from "../../utils/http-utils";
@@ -29,55 +31,81 @@ interface ProjAuthResponse {
   styles?: unknown;
 }
 
-async function promptForSecret(): Promise<string> {
+async function promptForProjectToken(): Promise<string> {
   const cli = readline.createInterface({ input: stdin, output: stdout });
 
   try {
-    const enteredSecret = await cli.question(
-      chalk.cyan("🔐 ") + `Paste ${ENV_PROJECT_SECRET} (your project secret): `,
+    const enteredProjectToken = await cli.question(
+      chalk.cyan("🔐 ") + `Paste ${ENV_PROJECT_TOKEN} (your project token): `,
     );
-    const secret = enteredSecret.trim();
-    if (!secret) {
-      throw new Error("Secret cannot be empty.");
+    const projectToken = enteredProjectToken.trim();
+    if (!projectToken) {
+      throw new Error("Project token cannot be empty.");
     }
-    return secret;
+    return projectToken;
   } finally {
     cli.close();
   }
 }
 
-/** Secret from env or interactive prompt (used by `init`, `get-logs`, and any CLI path that calls proj_auth). */
-export async function resolveSecretForInit(): Promise<string> {
-  const envSecret = getResolvedSecret();
-  if (envSecret) {
-    return envSecret;
+async function promptForUserSecret(): Promise<string> {
+  const cli = readline.createInterface({ input: stdin, output: stdout });
+
+  try {
+    const enteredUserSecret = await cli.question(
+      chalk.cyan("🙍 ") + `Paste ${ENV_USER_SECRET} (your user secret): `,
+    );
+    const userSecret = enteredUserSecret.trim();
+    if (!userSecret) {
+      throw new Error("User secret cannot be empty.");
+    }
+    return userSecret;
+  } finally {
+    cli.close();
   }
-  return promptForSecret();
+}
+
+/** Project token from env or interactive prompt. */
+export async function resolveProjectTokenForInit(): Promise<string> {
+  const envProjectToken = getResolvedProjectToken();
+  if (envProjectToken) {
+    return envProjectToken;
+  }
+  return promptForProjectToken();
+}
+
+/** User secret from env or interactive prompt. */
+export async function resolveUserSecretForInit(): Promise<string> {
+  const envUserSecret = getResolvedUserSecret();
+  if (envUserSecret) {
+    return envUserSecret;
+  }
+  return promptForUserSecret();
 }
 
 export interface InitConfigPayload extends ProjAuthConfigPayload {
-  secret_key: string;
+  project_token: string;
 }
 
 function buildConfigPayload(
   authResponse: ProjAuthResponse,
-  secret: string,
+  projectToken: string,
 ): InitConfigPayload {
   const apiRows = Array.isArray(authResponse.styles) ? authResponse.styles : [];
   return {
-    secret_key: secret,
+    project_token: projectToken,
     project_id: authResponse.project_id ?? null,
     session: authResponse.session ?? null,
     styles: buildStyleEntriesFromApi(apiRows),
   };
 }
 
-export async function fetchProjAuthConfig(secret: string): Promise<InitConfigPayload> {
+export async function fetchProjAuthConfig(projectToken: string): Promise<InitConfigPayload> {
   const baseUrl = resolveApiBaseUrl();
 
   const response = await fetch(`${baseUrl}/api/proj_auth`, {
     method: "POST",
-    headers: { secret },
+    headers: { secret: projectToken },
   }).catch((error: unknown) => {
     const msg = error instanceof Error ? error.message : String(error);
     throw new Error(
@@ -94,31 +122,35 @@ export async function fetchProjAuthConfig(secret: string): Promise<InitConfigPay
   });
 
   if (!isPlainAuthResponse(authResponse)) {
-    throw new Error("The reply didn’t look right. Run auralogger init again or double-check your secret.");
+    throw new Error(
+      "The reply didn’t look right. Run auralogger init again or double-check your project token.",
+    );
   }
 
-  return buildConfigPayload(authResponse, secret);
+  return buildConfigPayload(authResponse, projectToken);
 }
 
 /**
- * Same credential model as `AuraServer.syncFromSecret`: only the secret must be
- * available locally; id + session come from `POST /api/proj_auth`.
+ * Same credential model as `AuraServer.syncFromSecret`: only the project token
+ * must be available locally; id + session come from `POST /api/proj_auth`.
  */
 export async function resolveProjectContextForCliChecks(): Promise<{
-  secret: string;
+  projectToken: string;
+  userSecret: string;
   projectId: string;
   session: string;
 }> {
-  const secret = await resolveSecretForInit();
-  const payload = await fetchProjAuthConfig(secret);
+  const projectToken = await resolveProjectTokenForInit();
+  const userSecret = await resolveUserSecretForInit();
+  const payload = await fetchProjAuthConfig(projectToken);
   const projectId = payload.project_id?.trim() ?? "";
   const session = payload.session?.trim() ?? "";
   if (!projectId || !session) {
     throw new Error(
-      `${ENV_PROJECT_SECRET} looks off, or the API didn’t return project id + session — try auralogger init.`,
+      `${ENV_PROJECT_TOKEN} looks off, or the API didn’t return project id + session — try auralogger init.`,
     );
   }
-  return { secret, projectId, session };
+  return { projectToken, userSecret, projectId, session };
 }
 
 function isPlainAuthResponse(value: unknown): value is ProjAuthResponse {
@@ -155,7 +187,7 @@ function buildAuraClientWrapperSnippet(): string {
     `  configured = true`,
     `}`,
     ``,
-    `/** Browser-safe: no project secret. Configure via NEXT_PUBLIC_AURALOGGER_* env vars. */`,
+    `/** Browser-safe: no project token or user secret. Configure via NEXT_PUBLIC_AURALOGGER_* env vars. */`,
     `export function Auralog(params: AuralogParams): void {`,
     `  ensureConfigured()`,
     `  AuraClient.log(params.type, params.message, params.location, params.data)`,
@@ -179,17 +211,21 @@ function buildAuraServerWrapperSnippet(): string {
     `function ensureConfigured(): void {`,
     `  if (configured) return`,
     ``,
-    `  // You can also pass a string literal to AuraServer.configure(...) instead of process.env (never commit real secrets).`,
-    `  const secret = process.env.${ENV_PROJECT_SECRET}`,
-    `  if (!secret) {`,
-    `    throw new Error('Missing ${ENV_PROJECT_SECRET}')`,
+    `  // You can also pass string literals to AuraServer.configure(...) instead of process.env (never commit real secrets).`,
+    `  const projectToken = process.env.${ENV_PROJECT_TOKEN}`,
+    `  if (!projectToken) {`,
+    `    throw new Error('Missing ${ENV_PROJECT_TOKEN}')`,
+    `  }`,
+    `  const userSecret = process.env.${ENV_USER_SECRET}`,
+    `  if (!userSecret) {`,
+    `    throw new Error('Missing ${ENV_USER_SECRET}')`,
     `  }`,
     ``,
-    `  AuraServer.configure(secret)`,
+    `  AuraServer.configure(projectToken, userSecret)`,
     `  configured = true`,
     `}`,
     ``,
-    `/** Server-only: uses project secret from env. Do not import from client components. */`,
+    `/** Server-only: uses project token + user secret from env. Do not import from client components. */`,
     `export function AuraLog(params: AuralogParams): void {`,
     `  ensureConfigured()`,
     `  AuraServer.log(params.type, params.message, params.location, params.data)`,
@@ -259,7 +295,9 @@ function printCodeStory(title: string, snippet: string): void {
 
 function printCopyPasteEnvBlock(
   payload: InitConfigPayload,
-  secretWasAlreadyInEnv: boolean,
+  projectTokenWasAlreadyInEnv: boolean,
+  userSecretWasAlreadyInEnv: boolean,
+  userSecret: string,
 ): void {
   const projectId = payload.project_id?.trim() ?? "";
   const session = payload.session?.trim() ?? "";
@@ -277,8 +315,11 @@ function printCopyPasteEnvBlock(
   console.log("");
 
   const lines: string[] = [];
-  if (!secretWasAlreadyInEnv) {
-    lines.push(formatDotenvLine(ENV_PROJECT_SECRET, payload.secret_key));
+  if (!projectTokenWasAlreadyInEnv) {
+    lines.push(formatDotenvLine(ENV_PROJECT_TOKEN, payload.project_token));
+  }
+  if (!userSecretWasAlreadyInEnv) {
+    lines.push(formatDotenvLine(ENV_USER_SECRET, userSecret));
   }
   lines.push(formatDotenvLine(ENV_NEXT_PUBLIC_PROJECT_ID, projectId));
   lines.push(formatDotenvLine(ENV_NEXT_PUBLIC_PROJECT_SESSION, session));
@@ -291,22 +332,35 @@ function printCopyPasteEnvBlock(
     console.log(chalk.hex("#8b949e")(line));
   }
 
-  if (secretWasAlreadyInEnv) {
+  if (projectTokenWasAlreadyInEnv || userSecretWasAlreadyInEnv) {
     console.log("");
-    console.log(
-      chalk.dim("   ") +
-        chalk.white(ENV_PROJECT_SECRET) +
-        chalk.dim(
-          " was already in your environment — omitted above; keep your existing line alongside these.",
-        ),
-    );
+    if (projectTokenWasAlreadyInEnv) {
+      console.log(
+        chalk.dim("   ") +
+          chalk.white(ENV_PROJECT_TOKEN) +
+          chalk.dim(
+            " was already in your environment — omitted above; keep your existing line alongside these.",
+          ),
+      );
+    }
+    if (userSecretWasAlreadyInEnv) {
+      console.log(
+        chalk.dim("   ") +
+          chalk.white(ENV_USER_SECRET) +
+          chalk.dim(
+            " was already in your environment — omitted above; keep your existing line alongside these.",
+          ),
+      );
+    }
   }
   console.log("");
 }
 
 function printEnvInstructions(
   payload: InitConfigPayload,
-  secretWasAlreadyInEnv: boolean,
+  projectTokenWasAlreadyInEnv: boolean,
+  userSecretWasAlreadyInEnv: boolean,
+  userSecret: string,
 ): void {
   const styleCount = Array.isArray(payload.styles) ? payload.styles.length : 0;
   const stylesJsonLen = JSON.stringify(payload.styles).length;
@@ -321,9 +375,9 @@ function printEnvInstructions(
 
   console.log("");
   console.log(
-    chalk.bold.hex("#79c0ff")("🗝️  Step 1 — ") + chalk.bold.white(ENV_PROJECT_SECRET),
+    chalk.bold.hex("#79c0ff")("🗝️  Step 1 — ") + chalk.bold.white(ENV_PROJECT_TOKEN),
   );
-  if (secretWasAlreadyInEnv) {
+  if (projectTokenWasAlreadyInEnv) {
     console.log(
       chalk.gray(
         "   This variable was already in your environment, so you’re set: the ",
@@ -331,19 +385,15 @@ function printEnvInstructions(
         chalk.white("CLI") +
         chalk.gray(" and ") +
         chalk.white("AuraServer") +
-        chalk.gray(" both read the same key — no secret line printed again."),
+        chalk.gray(" both read the same key — no token line printed again."),
     );
     printAside("🔐", "The vault was already open — we're not flashing the combo again.");
   } else {
     console.log(
-      chalk.gray(
-        "   You typed the secret at the prompt. Use the ",
-      ) +
+      chalk.gray("   You typed the project token at the prompt. Use the ") +
         chalk.bold.white("copy-paste env block") +
-        chalk.gray(
-          " below (includes ",
-        ) +
-        chalk.white(ENV_PROJECT_SECRET) +
+        chalk.gray(" below (includes ") +
+        chalk.white(ENV_PROJECT_TOKEN) +
         chalk.gray(
           ") in a gitignored `.env` or your host secret store so future CLI runs and AuraServer can authenticate.",
         ),
@@ -372,7 +422,23 @@ function printEnvInstructions(
   );
   printAside("🕶️", "Fury: \"There was an idea…\" — two files: Auralog vs AuraLog, different battle suits.");
 
-  printCopyPasteEnvBlock(payload, secretWasAlreadyInEnv);
+  console.log("");
+  console.log(
+    chalk.bold.hex("#79c0ff")("🧾  Step 3 — ") + chalk.bold.white(ENV_USER_SECRET),
+  );
+  if (userSecretWasAlreadyInEnv) {
+    console.log(
+      chalk.gray("   Already present in your environment — no user-secret line printed again."),
+    );
+  } else {
+    console.log(
+      chalk.gray(
+        "   You typed the user secret at the prompt. It appears in the copy-paste env block below.",
+      ),
+    );
+  }
+
+  printCopyPasteEnvBlock(payload, projectTokenWasAlreadyInEnv, userSecretWasAlreadyInEnv, userSecret);
 
   console.log("");
   printTwoAuralogExplainer();
@@ -390,7 +456,7 @@ function printEnvInstructions(
   console.log(
     chalk.bold.hex("#f85149")("🙅 ") +
       chalk.white("Never put ") +
-      chalk.bold.white(ENV_PROJECT_SECRET) +
+      chalk.bold.white(ENV_PROJECT_TOKEN) +
       chalk.white(" in frontend bundles — only the ") +
       chalk.bold.white("server") +
       chalk.white(" AuraLog file gets that."),
@@ -414,7 +480,7 @@ function printAlreadyConfiguredSuccess(): void {
   );
   console.log(
     chalk.gray(
-      "   Drop-in helpers below — client reads NEXT_PUBLIC_* from your bundler; server still uses the secret from env.",
+      "   Drop-in helpers below — client reads NEXT_PUBLIC_* from your bundler; server still uses token + user secret from env.",
     ),
   );
   printAside("🔮", "Strange: I ran futures — this timeline's boring; your shell already knows the spell.");
@@ -450,28 +516,31 @@ function printAlreadyConfiguredSuccess(): void {
 export async function runInit(): Promise<void> {
   loadCliEnvFiles();
 
-  const hasSecret = Boolean(getResolvedSecret());
-  const secretWasAlreadyInEnv = hasSecret;
+  const hasProjectToken = Boolean(getResolvedProjectToken());
+  const projectTokenWasAlreadyInEnv = hasProjectToken;
+  const hasUserSecret = Boolean(getResolvedUserSecret());
+  const userSecretWasAlreadyInEnv = hasUserSecret;
   const hasProjectId = Boolean(getResolvedProjectId());
   const hasSession = Boolean(getResolvedSession());
   const hasStyles = tryParseResolvedStyles() !== null;
 
-  if (hasSecret && hasProjectId && hasSession && hasStyles) {
+  if (hasProjectToken && hasUserSecret && hasProjectId && hasSession && hasStyles) {
     printAlreadyConfiguredSuccess();
     return;
   }
 
-  if (hasSecret && !hasProjectId && !hasSession && !hasStyles) {
+  if (hasProjectToken && !hasProjectId && !hasSession && !hasStyles) {
     console.log(
       chalk.dim("🔎 ") +
-        chalk.white(`Spotted ${ENV_PROJECT_SECRET} — grabbing the rest from home base…`),
+        chalk.white(`Spotted ${ENV_PROJECT_TOKEN} — grabbing the rest from home base…`),
     );
     printAside("🔮", "Strange: \"We're in the endgame now.\" — fetching id, session, styles from the sky.");
   }
 
-  const secret = await resolveSecretForInit();
-  const payload = await fetchProjAuthConfig(secret);
-  printEnvInstructions(payload, secretWasAlreadyInEnv);
+  const projectToken = await resolveProjectTokenForInit();
+  const userSecret = await resolveUserSecretForInit();
+  const payload = await fetchProjAuthConfig(projectToken);
+  printEnvInstructions(payload, projectTokenWasAlreadyInEnv, userSecretWasAlreadyInEnv, userSecret);
   console.log(
     chalk.hex("#ffa657")("🎬 ") +
       chalk.dim("Curtain call: ") +
