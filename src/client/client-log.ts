@@ -2,12 +2,14 @@ import { resolveWsBaseUrl } from "../utils/backend-origin";
 import { DEFAULT_SOCKET_IDLE_CLOSE_MS } from "../utils/socket-idle-close";
 import {
   getResolvedProjectId,
+  getResolvedProjectToken,
   getResolvedSession,
   tryParseResolvedStyles,
 } from "../utils/env-config";
 import { resolveLogStyleSpec } from "../cli/utility/log-styles";
 
 export interface AuraClientConfigureOptions {
+  projectToken?: string | null;
   projectId?: string | null;
   session?: string | null;
   /** Style entries (same shape as from `auralogger init`). */
@@ -44,6 +46,7 @@ const UNKNOWN_TYPE = "unknown";
 const LOCAL_FALLBACK_SESSION = "auralogger-local-session";
 
 let overrideProjectId: string | undefined;
+let overrideProjectToken: string | undefined;
 let overrideSession: string | undefined;
 let overrideStyles: unknown | undefined;
 
@@ -179,6 +182,13 @@ function resolvedProjectId(): string | undefined {
   return getResolvedProjectId();
 }
 
+function resolvedProjectToken(): string | undefined {
+  if (overrideProjectToken !== undefined) {
+    return asNonEmptyString(overrideProjectToken);
+  }
+  return getResolvedProjectToken();
+}
+
 function resolvedSessionRaw(): string | undefined {
   if (overrideSession !== undefined) {
     return asNonEmptyString(overrideSession);
@@ -294,22 +304,43 @@ function socketOnce(
   );
 }
 
-/** Uses global WebSocket only (browser / Node 22+). Node without it: assign `globalThis.WebSocket` from `ws` before calling AuraClient.log. */
-function createWebSocket(url: string): WebSocketLike | null {
-  const NativeWebSocket = (globalThis as { WebSocket?: new (u: string) => unknown })
+/** Uses global WebSocket. For auth headers, use `ws` in Node by assigning `globalThis.WebSocket`. */
+function createWebSocket(url: string, projectToken: string): WebSocketLike | null {
+  const NativeWebSocket = (globalThis as {
+    WebSocket?: new (u: string, protocolsOrOptions?: unknown) => unknown;
+  })
     .WebSocket;
   if (typeof NativeWebSocket === "function") {
-    return new NativeWebSocket(url) as WebSocketLike;
+    if (isBrowserConsole()) {
+      console.error(
+        "auralogger: create_browser_logs now requires Authorization header. Browsers cannot set custom websocket headers; use a server relay or run AuraClient from Node with ws.",
+      );
+      return null;
+    }
+
+    try {
+      return new NativeWebSocket(url, {
+        headers: {
+          authorization: `Bearer ${projectToken}`,
+        },
+      }) as WebSocketLike;
+    } catch (error: unknown) {
+      const message = toErrorMessage(error);
+      console.error(
+        `auralogger: could not open authenticated websocket. Ensure globalThis.WebSocket comes from ws (supports headers). ${message}`,
+      );
+      return null;
+    }
   }
 
   console.error(
-    "auralogger: WebSocket is not available. Use a browser, Node with global WebSocket, or set globalThis.WebSocket from the ws package before calling AuraClient.log.",
+    "auralogger: WebSocket is not available. Use Node and set globalThis.WebSocket from the ws package before calling AuraClient.log.",
   );
   return null;
 }
 
-function connectSocket(url: string): WebSocketLike | null {
-  const ws = createWebSocket(url);
+function connectSocket(url: string, projectToken: string): WebSocketLike | null {
+  const ws = createWebSocket(url, projectToken);
   if (!ws) {
     return null;
   }
@@ -321,6 +352,13 @@ function connectSocket(url: string): WebSocketLike | null {
 
 function ensureSocket(): WebSocketLike | null {
   const { CONNECTING, OPEN, CLOSED } = wsStates();
+  const projectToken = resolvedProjectToken();
+  if (!projectToken) {
+    console.error(
+      "auralogger: missing AURALOGGER_PROJECT_TOKEN for create_browser_logs websocket auth.",
+    );
+    return null;
+  }
   const projectId = getProjectId();
   if (!projectId) {
     console.error(
@@ -345,7 +383,7 @@ function ensureSocket(): WebSocketLike | null {
     }
   }
 
-  const connected = connectSocket(url);
+  const connected = connectSocket(url, projectToken);
   if (!connected) {
     socket = null;
     socketUrl = null;
@@ -479,6 +517,12 @@ async function processClientlogAsync(
 
 export class AuraClient {
   static configure(options: AuraClientConfigureOptions): void {
+    if ("projectToken" in options) {
+      overrideProjectToken =
+        options.projectToken === null || options.projectToken === undefined
+          ? undefined
+          : options.projectToken;
+    }
     if ("projectId" in options) {
       overrideProjectId =
         options.projectId === null || options.projectId === undefined

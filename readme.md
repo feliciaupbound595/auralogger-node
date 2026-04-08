@@ -1,3 +1,4 @@
+<!-- Generated: 2026-04-08 09:38:59 UTC -->
 # Auralogger for Node.js (SDK + CLI)
 
 Stream logs from your **Node server** and your **browser app** to Auralogger, then query them from the terminal , while watching them popup on ur mobile/browser with Aura
@@ -245,7 +246,11 @@ If you must run `AuraClient` in older Node, set `globalThis.WebSocket` (see `**u
 
 Two classes of values:
 
-- **Private** — `**AURALOGGER_PROJECT_TOKEN`** and `**AURALOGGER_USER_SECRET`**. Project token is sent as `**secret`** and user secret as `**user_secret`** where required. Neither should appear in browser bundles, public repos, or `NEXT_PUBLIC_*` / `VITE_*` keys.
+- **Private** — `**AURALOGGER_PROJECT_TOKEN`** and `**AURALOGGER_USER_SECRET`**.
+  - Project token is sent on authenticated WebSockets as `**Authorization: Bearer <project token>`**.
+  - User secret is sent on `create_log` as header `**secret: <user secret>`**.
+  - `POST /api/proj_auth` remains token-only via header `**secret`**.
+  Neither should appear in browser bundles, public repos, or `NEXT_PUBLIC_*` / `VITE_*` keys.
 - **Publishable** — `**project_id`**, `**session`**, and `**styles**` (the three non-secret fields from `auralogger init`). They are not API secrets. You still choose **where** they live: server-only `.env` vs client-visible env keys for frontends.
 
 The CLI and `**AuraServer`** need **both private creds** plus those three for full streaming. `**AuraClient`** uses **only** the publishable three (via env as your bundler exposes them) and never reads **`AURALOGGER_USER_SECRET`**.
@@ -255,8 +260,8 @@ The CLI and `**AuraServer`** need **both private creds** plus those three for fu
 
 | Variable                    | Who uses it                                                                                                          | Notes                                                                                                                                      |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `AURALOGGER_PROJECT_TOKEN` | CLI (`init`, `get-logs`, checks), `**AuraServer`**, any code that calls authenticated HTTP or `create_log` WebSocket | **Server-side / CI secrets only.** Sent as header `secret`. Not read by `**AuraClient`**. |
-| `AURALOGGER_USER_SECRET` | CLI (`init`, `get-logs`, checks), `**AuraServer`**, routes/sockets that require user auth with project auth | **Server-side / CI secrets only.** Sent as header/query `user_secret` where required. Never exposed to `**AuraClient`**. |
+| `AURALOGGER_PROJECT_TOKEN` | CLI (`init`, `get-logs`, checks), `**AuraServer`**, any code that calls authenticated HTTP or WebSockets | **Server-side / CI secrets only.** Sent on WebSockets as `Authorization: Bearer ...`. Still used for `POST /api/proj_auth` as header `secret`. |
+| `AURALOGGER_USER_SECRET` | CLI (`init`, `get-logs`, checks), `**AuraServer`**, routes/sockets that require a user secret | **Server-side / CI secrets only.** Sent on `create_log` as header `secret: <user secret>`. Never exposed to `**AuraClient`**. |
 
 
 #### Publishable variables (exact base names)

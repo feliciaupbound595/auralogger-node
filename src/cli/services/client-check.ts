@@ -24,27 +24,31 @@ function createIsoTimestampWithMicroseconds(epochMs: number): string {
 }
 
 /**
- * Same auth path as `server-check`: **secret** (env or prompt) + `proj_auth` for
- * id/session. The **browser ingest** socket does not send the secret — only
- * `create_browser_logs`, like `AuraClient`.
+ * Same auth path as `server-check`: project token (env or prompt) + `proj_auth`
+ * for id/session. The browser ingest socket authenticates with
+ * `Authorization: Bearer <projectToken>`.
  */
 export async function runClientCheck(): Promise<void> {
   loadCliEnvFiles();
-  const { projectId, session } = await resolveProjectContextForCliChecks();
+  const { projectToken, projectId, session } = await resolveProjectContextForCliChecks();
 
   const wsUrl = buildClientWsUrl(projectId);
   console.log(
     chalk.dim("🌐 ") +
       chalk.white("Trying the ") +
       chalk.bold.white("browser-style") +
-      chalk.white(" log tunnel (no secret on the wire, scouts honor)…"),
+      chalk.white(" log tunnel (Bearer-auth socket handshake)…"),
   );
   printAside(
     "🕷️",
     "Parker at the airport: They gave me the suit — not the Stark login. Socket hops in without the secret.",
   );
   await new Promise<void>((resolve, reject) => {
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(wsUrl, {
+      headers: {
+        authorization: `Bearer ${projectToken}`,
+      },
+    });
 
     const timeout = setTimeout(() => {
       ws.terminate();

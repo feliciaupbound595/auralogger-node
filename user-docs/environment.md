@@ -1,10 +1,15 @@
+<!-- Generated: 2026-04-08 09:38:59 UTC -->
 # Environment variables
 
 *The filing cabinet: two locked drawers for private creds, plus three labeled folders you can safely show the browser (if you’re careful how). Names below are not suggestions — they’re the keys the CLI and SDK actually read.*
 
 Two classes of values:
 
-- **Private** — **`AURALOGGER_PROJECT_TOKEN`** and **`AURALOGGER_USER_SECRET`**. Project token is sent as HTTP/WS header **`secret`**. User secret is sent as **`user_secret`** on routes that require both creds. Do not expose either one in browser bundles, public repos, or `NEXT_PUBLIC_*` / `VITE_*` keys.
+- **Private** — **`AURALOGGER_PROJECT_TOKEN`** and **`AURALOGGER_USER_SECRET`**.
+  - Project token is sent as **`Authorization: Bearer <project token>`** for authenticated WebSockets.
+  - User secret is sent as header **`secret: <user secret>`** on `create_log`.
+  - `POST /api/proj_auth` remains token-only via header **`secret`**.
+  Do not expose either one in browser bundles, public repos, or `NEXT_PUBLIC_*` / `VITE_*` keys.
 - **Publishable** — **`project_id`**, **`session`**, and **`styles`** (the three non-secret fields from `auralogger init`). They are not API secrets. You still choose **where** they live: server-only `.env` vs client-visible env keys for frontends.
 
 The CLI and **`AuraServer`** need private creds plus those three for full streaming. **`AuraClient`** uses **only** the publishable three (via env as your bundler exposes them), and never reads `AURALOGGER_USER_SECRET`.
@@ -15,8 +20,8 @@ The CLI and **`AuraServer`** need private creds plus those three for full stream
 
 | Variable | Who uses it | Notes |
 |----------|-------------|--------|
-| `AURALOGGER_PROJECT_TOKEN` | CLI (`init`, `get-logs`, checks), **`AuraServer`**, any code that calls authenticated HTTP or `create_log` WebSocket | **Server-side / CI secrets only.** Sent on the wire as header `secret`. Not read by **`AuraClient`**. |
-| `AURALOGGER_USER_SECRET` | CLI (`init`, `get-logs`, checks), **`AuraServer`**, any route/socket that requires user auth with project auth | **Server-side / CI secrets only.** Sent on the wire as `user_secret` where required. Never exposed to **`AuraClient`**. |
+| `AURALOGGER_PROJECT_TOKEN` | CLI (`init`, `get-logs`, checks), **`AuraServer`**, any code that calls authenticated HTTP or WebSockets | **Server-side / CI secrets only.** Sent on WebSockets as `Authorization: Bearer ...`. Still used for `POST /api/proj_auth` as header `secret`. |
+| `AURALOGGER_USER_SECRET` | CLI (`init`, `get-logs`, checks), **`AuraServer`**, routes/sockets that require a user secret | **Server-side / CI secrets only.** Sent on `create_log` as header `secret: <user secret>`. Never exposed to **`AuraClient`**. |
 
 ---
 
@@ -92,10 +97,10 @@ NEXT_PUBLIC_AURALOGGER_PROJECT_STYLES="[{\"default\":{\"icon\":\"🗒️\"}}]"
 |---------|----------------|-------------------|
 | **`auralogger init`** | Optional in env, else prompt | Step 2 trio + copy-paste dotenv lines after auth |
 | **`auralogger server-check`** | Project token + user secret in env | Project id required (session/styles not required for the check itself) |
-| **`auralogger client-check`** | Not sent on browser socket; context still resolved via CLI path | Project id + session (same as **`server-check`**) |
+| **`auralogger client-check`** | Uses project token for `Authorization: Bearer ...` on `create_browser_logs` | Project id + session (same as **`server-check`**) |
 | **`auralogger get-logs`** | Project token + user secret required in env or prompt | **`STYLES`** optional in env: if unset, CLI fetches them via **`proj_auth`** (same as **`init`**) for this run; use **`auralogger init`** to persist copy-paste lines |
 | **`AuraServer`** | Required (`configure` / env / `syncFromSecret`) | Loaded from **`proj_auth`** after token auth (not required in `.env`) |
-| **`AuraClient`** | **Never** | Id required; session/styles optional with fallbacks |
+| **`AuraClient`** | Browser: **never**. Node (using `ws`): requires project token for WS auth. | Id required; session/styles optional with fallbacks |
 
 ---
 

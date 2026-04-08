@@ -1,3 +1,4 @@
+<!-- Generated: 2026-04-08 09:38:59 UTC -->
 # Infra notes (logging ingest)
 
 Backend-facing assumptions the Node SDK/CLI relies on for log ingest. (Hosted service vs self-hosted may differ in hardening; this is the contract the client code expects.)
@@ -9,8 +10,8 @@ Two paths:
 
 | Path                                    | Auth                                      | Producer         | SDK                                        | CLI helpers                              |
 | --------------------------------------- | ----------------------------------------- | ---------------- | ------------------------------------------ | ---------------------------------------- |
-| `**/{project_id}/create_log**`          | Yes (`**secret**` + `**user_secret**`)    | Node / server    | `**AuraServer**` (`auralogger-cli/server`) | `**server-check**`, `**test-serverlog**` |
-| `**/{project_id}/create_browser_logs**` | No (by design)                            | Browser / client | `**AuraClient**` (`auralogger-cli/client`) | `**client-check**`, `**test-clientlog**` |
+| `**/{project_id}/create_log**`          | Yes (**`Authorization: Bearer <project token>`** + **`secret: <user secret>`**) | Node / server    | `**AuraServer**` (`auralogger-cli/server`) | `**server-check**`, `**test-serverlog**` |
+| `**/{project_id}/create_browser_logs**` | Yes (**`Authorization: Bearer <project token>`**) | Client ingest    | `**AuraClient**` (`auralogger-cli/client`) | `**client-check**`, `**test-clientlog**` |
 
 
 Treat browser ingest as **untrusted** server-side: validate, rate-limit, and abuse-protect as your deployment requires.

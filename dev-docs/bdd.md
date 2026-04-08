@@ -1,4 +1,4 @@
-
+<!-- Generated: 2026-04-08 09:38:59 UTC -->
 ## Feature: server logs (`AuraServer`)
 
 ### Scenario: logs print locally
@@ -21,7 +21,7 @@
 - **When** the user calls **`AuraServer.log(...)`**
 - **Then** the SDK may obtain id, session, and styles from **`POST /api/proj_auth`** without all four **`AURALOGGER_PROJECT_*`** variables present in `.env`
 - **And** `proj_auth` uses token-only header `secret`
-- **And** when the socket is ready, payloads go to **`/{project_id}/create_log`** with auth as implemented in **`server-log.ts`** (project token + user secret where required)
+- **And** when the socket is ready, payloads go to **`/{project_id}/create_log`** with **`Authorization: Bearer <project token>`** and **`secret: <user secret>`** (see **`server-log.ts`**)
 
 ## Feature: browser logs (`AuraClient`)
 
@@ -31,11 +31,12 @@
 - **When** the user calls **`AuraClient.log(...)`**
 - **Then** the implementation uses the standard **`WebSocket`** API (no Node **`ws`** package in the client graph)
 
-### Scenario: browser ingest is unauthenticated
+### Scenario: browser ingest uses Bearer auth
 
 - **Given** a resolvable **project id** (configure or **`NEXT_PUBLIC_*`** / **`VITE_*`** / unprefixed env per **`env-config.ts`**)
 - **When** **`AuraClient.log`** opens a socket
 - **Then** it targets **`/{project_id}/create_browser_logs`**
+- **And** it authenticates with **`Authorization: Bearer <project token>`**
 - **And** it does not send the user secret
 - **And** payload shape matches server ingest expectations (type, message, session, **`created_at`**, optional location / data)
 
@@ -66,7 +67,7 @@
 
 - **Given** the same shell expectations as **`server-check`** for project/session context (user secret is not sent on the browser socket)
 - **When** the user runs **`auralogger client-check`**
-- **Then** it opens **`/{project_id}/create_browser_logs`** without `user_secret` on the wire
+- **Then** it opens **`/{project_id}/create_browser_logs`** with **`Authorization: Bearer <project token>`** (no user-secret header)
 
 ### Scenario: `test-serverlog` / `test-clientlog` smoke paths
 

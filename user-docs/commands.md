@@ -1,3 +1,4 @@
+<!-- Generated: 2026-04-08 09:38:59 UTC -->
 # CLI command reference
 
 *Short and bossy: what each subcommand does, how to spell **`get-logs`** filters, and copy-paste examples. For vibes + full tour, **[`readme.md`](../readme.md)**; for env spellings, **[`environment.md`](environment.md)**.*
@@ -18,7 +19,7 @@ auralogger <command> [arguments...]
 |---------|------|---------|
 | `init` | — | Auth with project token via `secret` header; **copy-paste dotenv block** with `NEXT_PUBLIC_*`, unprefixed publishable keys, and `AURALOGGER_PROJECT_TOKEN` / `AURALOGGER_USER_SECRET` when typed at the prompt (omitted if already in env); two snippets (**`Auralog`** + **`AuraLog`**). Vite: duplicate values as `VITE_*` (see **`user-docs/environment.md`**). |
 | `server-check` | — | Test WebSocket connectivity (needs project id + `AURALOGGER_PROJECT_TOKEN` + `AURALOGGER_USER_SECRET` in env). |
-| `client-check` | — | Same project/session context resolution as **`server-check`**; opens **`create_browser_logs`** (no secret headers on the browser-style socket, like **`AuraClient`**). |
+| `client-check` | — | Same project/session context resolution as **`server-check`**; opens **`create_browser_logs`** with **`Authorization: Bearer <project token>`** (no user-secret header). |
 | `test-serverlog` | — | Send 5 logs via `AuraServer.log` (production path), then close. |
 | `test-clientlog` | — | Send 5 logs via `AuraClient.log` (production path), then close. |
 | `get-logs` | `[filters...]` | Fetch and print logs; filters use grammar below. If **`AURALOGGER_PROJECT_STYLES`** (or public equivalents) is missing, runs the same **`proj_auth`** fetch as **`init`** and styles logs from the response (prompts for project token / user secret when needed). |

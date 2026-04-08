@@ -258,8 +258,8 @@ function buildWsUrl(projectId: string): string {
 function connectSocket(url: string, projectToken: string, userSecret: string): WebSocket {
   const ws = new WebSocket(url, {
     headers: {
-      secret: projectToken,
-      user_secret: userSecret,
+      authorization: `Bearer ${projectToken}`,
+      secret: userSecret,
     },
   });
 

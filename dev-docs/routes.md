@@ -1,3 +1,4 @@
+<!-- Generated: 2026-04-08 09:38:59 UTC -->
 # Routes map (HTTP + WebSocket)
 
 Routes used by the Node CLI/SDK and where to update them.
@@ -42,7 +43,9 @@ Routes used by the Node CLI/SDK and where to update them.
   - **`AuraServer`** (**`src/server/server-log.ts`**)
   - **`auralogger server-check`** (**`src/cli/services/server-check.ts`**)
   - **`auralogger test-serverlog`** (**`src/cli/services/test-logger.ts`**)
-- **Auth:** authenticated (`secret` + `user_secret` as required by server implementation)
+- **Auth:** authenticated
+  - **`Authorization: Bearer <project token>`** (project token from **`AURALOGGER_PROJECT_TOKEN`**)
+  - **`secret: <user secret>`** (user secret from **`AURALOGGER_USER_SECRET`**)
 
 ### `/{project_id}/create_browser_logs`
 
@@ -50,7 +53,8 @@ Routes used by the Node CLI/SDK and where to update them.
   - **`AuraClient`** (**`src/client/client-log.ts`**)
   - **`auralogger client-check`** (**`src/cli/services/client-check.ts`**)
   - **`auralogger test-clientlog`** (**`src/cli/services/test-logger.ts`**)
-- **Auth:** none on the socket (browser-safe ingest)
+- **Auth:** authenticated
+  - **`Authorization: Bearer <project token>`** (project token from **`AURALOGGER_PROJECT_TOKEN`**)
 
 ---
 

@@ -39,8 +39,8 @@ export async function runServerCheck(): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const ws = new WebSocket(wsUrl, {
       headers: {
-        secret: projectToken,
-        user_secret: userSecret,
+        authorization: `Bearer ${projectToken}`,
+        secret: userSecret,
       },
     });
 
