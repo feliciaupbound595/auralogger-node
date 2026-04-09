@@ -8,21 +8,23 @@
 
 | Doc | Purpose |
 |-----|---------|
-| [`file-map.md`](file-map.md) | Where to edit: CLI, SDK, utilities |
-| [`routes.md`](routes.md) | HTTP + WebSocket routes, `AURALOGGER_API_URL` / `AURALOGGER_WS_URL` (`backend-origin.ts`) |
-| [`infra.md`](infra.md) | Backend / Redis assumptions for ingest |
+| [`file-map.md`](file-map.md) | **Source map:** every meaningful `src/` file + `package.json` exports |
+| [`feature-flows.md`](feature-flows.md) | **End-to-end flows:** init, get-logs, checks, `AuraServer` / `AuraClient` (diagrams + credentials) |
+| [`api-urls.md`](api-urls.md) | **HTTP vs WebSocket origins:** defaults, `AURALOGGER_API_URL` / `AURALOGGER_WS_URL`, troubleshooting |
+| [`routes.md`](routes.md) | HTTP + WebSocket **routes** (paths, auth); links to `api-urls.md` for bases |
+| [`infra.md`](infra.md) | Backend / ingest assumptions (no storage implementation in this repo) |
 | [`bdd.md`](bdd.md) | Observable behavior for `AuraServer`, `AuraClient`, CLI |
 | [`../user-docs/commands.md`](../user-docs/commands.md) | CLI cheat sheet (filters) |
 
 ## Current package behavior (high level)
 
-- **`AuraServer`** (Node, `auralogger-cli/server`): uses `ws`, authenticates server ingest with **`AURALOGGER_PROJECT_TOKEN`** + **`AURALOGGER_USER_SECRET`** where required. `POST /api/proj_auth` remains token-only (`secret` header). After configure/env resolution, id, session, and styles typically come from **`POST /api/proj_auth`** (not always all publishable vars in `.env`). Terminal output uses **`chalk`** when styles resolve. Browser bundles that import `./server` get **`server.browser.ts`** (stub).
-- **`AuraClient`** (browser-safe, `auralogger-cli/client`): uses the runtime **global `WebSocket`**, **no user secret**. Connects to **`/{project_id}/create_browser_logs`**. Configure via **`AuraClient.configure`** (often from **`NEXT_PUBLIC_AURALOGGER_*`** in app env). Local preview uses DevTools console styling when styles resolve; malformed config falls back to plain lines. Socket send uses browser-safe paths (no Node-only `ws.once.bind` patterns).
+- **`AuraServer`** (Node, `auralogger-cli/server`): uses `ws`. **`POST /api/{project_token}/proj_auth`** (token in path). After configure/env, id/session/styles load from **`proj_auth`**. Server ingest WebSocket: **`/{proj_token}/create_log`** with **`Authorization: Bearer <user_secret>`** (see **`server-log.ts`**). Terminal output uses **`chalk`** when styles resolve. Browser bundles that import `./server` get **`server.browser.ts`** (stub).
+- **`AuraClient`** (browser-safe, `auralogger-cli/client`): **global `WebSocket`**, **no user secret**. **`AuraClient.configure({ projectToken })`** only; hydrates via **`POST /api/{project_token}/proj_auth`**. Browser ingest: **`/{proj_token}/create_browser_logs`** (path token in URL; no custom socket headers). Local preview uses DevTools styling when styles resolve.
 
 ## CLI
 
 - Entry: **`src/cli/bin/auralogger.ts`** → `loadCliEnvFiles()` then subcommands.
-- **`init`**: `POST /api/proj_auth` with token-only `secret` header, **Step 2** shows publishable id/session/styles, then a **copy-paste dotenv block** (`NEXT_PUBLIC_*`, unprefixed trio, `AURALOGGER_PROJECT_TOKEN` + `AURALOGGER_USER_SECRET` when typed at prompt); snippets are **`Auralog`** (reads **`NEXT_PUBLIC_AURALOGGER_*`**) and **`AuraLog`** (`ensureConfigured` + **`AuraServer.configure(projectToken, userSecret)`**).
+- **`init`**: banner → prompts → `POST /api/{project_token}/proj_auth` (token in path), **session summary**, **copy-paste dotenv** (up to five lines: server token, user secret, session, **`NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`**, **`VITE_AURALOGGER_PROJECT_TOKEN`** — no id/styles keys); snippets are **`Auralog`** and **`AuraLog`**.
 - Recommended invocation for apps: **`npx auralogger-cli …`** (project-scoped; see readme).
 
 ## Build

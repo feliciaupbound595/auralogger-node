@@ -1,4 +1,9 @@
 <!-- Generated: 2026-04-08 09:38:59 UTC -->
+
+**Diagrams and file-level paths:** see **[`feature-flows.md`](feature-flows.md)**.
+
+---
+
 ## Feature: server logs (`AuraServer`)
 
 ### Scenario: logs print locally
@@ -19,9 +24,9 @@
 
 - **Given** a valid project token (**`configure(projectToken, userSecret?)`** or env) so **`proj_auth`** can run
 - **When** the user calls **`AuraServer.log(...)`**
-- **Then** the SDK may obtain id, session, and styles from **`POST /api/proj_auth`** without all four **`AURALOGGER_PROJECT_*`** variables present in `.env`
-- **And** `proj_auth` uses token-only header `secret`
-- **And** when the socket is ready, payloads go to **`/{project_id}/create_log`** with **`Authorization: Bearer <project token>`** and **`secret: <user secret>`** (see **`server-log.ts`**)
+- **Then** the SDK may obtain id, session, and styles from **`POST /api/{project_token}/proj_auth`** without all publishable **`AURALOGGER_PROJECT_*`** variables present in `.env`
+- **And** `proj_auth` sends the token in the **URL path** (URL-encoded), not a `secret` header
+- **And** when the socket is ready, payloads go to **`/{proj_token}/create_log`** with **`Authorization: Bearer <user secret>`** only (see **`server-log.ts`**)
 
 ## Feature: browser logs (`AuraClient`)
 
@@ -31,43 +36,44 @@
 - **When** the user calls **`AuraClient.log(...)`**
 - **Then** the implementation uses the standard **`WebSocket`** API (no Node **`ws`** package in the client graph)
 
-### Scenario: browser ingest uses Bearer auth
+### Scenario: configure is project-token only; runtime hydrates via proj_auth
 
-- **Given** a resolvable **project id** (configure or **`NEXT_PUBLIC_*`** / **`VITE_*`** / unprefixed env per **`env-config.ts`**)
-- **When** **`AuraClient.log`** opens a socket
-- **Then** it targets **`/{project_id}/create_browser_logs`**
-- **And** it authenticates with **`Authorization: Bearer <project token>`**
+- **Given** **`AuraClient.configure({ projectToken })`** was called with a non-empty token (often from **`NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`** / **`VITE_AURALOGGER_PROJECT_TOKEN`**)
+- **When** the first log tries to open a socket or needs session/styles for console output
+- **Then** the client may call **`POST /api/{project_token}/proj_auth`** once (single-flight) with the token in the path
+- **And** project id, session, and styles are held in memory after a successful response
+- **And** the ingest socket targets **`/{proj_token}/create_browser_logs`** where **`proj_token`** is the configured project token (**path-only auth**; no Bearer header on the socket)
 - **And** it does not send the user secret
 - **And** payload shape matches server ingest expectations (type, message, session, **`created_at`**, optional location / data)
 
 ### Scenario: local preview tolerates bad style config
 
-- **Given** **`styles`** / env styles are missing or invalid
+- **Given** **`proj_auth`** styles are missing or malformed after hydration
 - **When** **`AuraClient.log`** runs
-- **Then** a plain fallback console line can still appear
-- **And** socket behavior degrades gracefully (e.g. missing project id → error message, not opaque **`bind`** failures on wrong socket APIs)
+- **Then** a plain fallback console line can still appear (per **`resolveLogStyleSpec`** / defaults)
+- **And** socket behavior degrades gracefully (e.g. missing project id after failed `proj_auth` → error message, not opaque failures)
 
 ## Feature: CLI
 
 ### Scenario: `init` produces token/user-secret + snippets
 
 - **Given** the user runs **`auralogger init`**
-- **When** the CLI authenticates via **`POST /api/proj_auth`**
-- **Then** it prints **`AURALOGGER_PROJECT_TOKEN`** and **`AURALOGGER_USER_SECRET`** lines when they were not already in env
-- **And** it shows publishable id / session / styles for copying into **`NEXT_PUBLIC_*`** / **`VITE_*`**
-- **And** it prints **`Auralog`** (env-driven **`AuraClient.configure`**) and **`AuraLog`** (**`AuraServer.configure(projectToken, userSecret)`**) snippets for separate files
+- **When** the CLI authenticates via **`POST /api/{project_token}/proj_auth`**
+- **Then** it prints up to **five** dotenv lines when values are new: **`AURALOGGER_PROJECT_TOKEN`**, **`AURALOGGER_USER_SECRET`**, **`AURALOGGER_PROJECT_SESSION`**, **`NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`**, **`VITE_AURALOGGER_PROJECT_TOKEN`** (last two match the server token); lines already in env are omitted with a short note
+- **And** it does **not** print project id or styles into `.env` (those hydrate via **`proj_auth`** at runtime)
+- **And** it prints **`Auralog`** (**`AuraClient.configure({ projectToken })`**) and **`AuraLog`** (**`AuraServer.configure(projectToken, userSecret)`**) snippets for separate files
 
 ### Scenario: `server-check` hits authenticated ingest WS
 
-- **Given** project id + project token + user secret in env
+- **Given** project id (from **`proj_auth`**) + project token + user secret resolved (env or prompt)
 - **When** the user runs **`auralogger server-check`**
-- **Then** it validates connectivity toward **`/{project_id}/create_log`** (authenticated)
+- **Then** it validates connectivity toward **`/{proj_token}/create_log`** with **`Authorization: Bearer <user secret>`**
 
 ### Scenario: `client-check` hits browser ingest WS
 
-- **Given** the same shell expectations as **`server-check`** for project/session context (user secret is not sent on the browser socket)
+- **Given** project token + session (and id for messaging) resolved the same way as **`server-check`** (`resolveProjectContextForCliChecks`)
 - **When** the user runs **`auralogger client-check`**
-- **Then** it opens **`/{project_id}/create_browser_logs`** with **`Authorization: Bearer <project token>`** (no user-secret header)
+- **Then** it opens **`/{proj_token}/create_browser_logs`** with **no custom WebSocket headers** (path-only auth)
 
 ### Scenario: `test-serverlog` / `test-clientlog` smoke paths
 

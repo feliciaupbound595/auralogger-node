@@ -4,7 +4,6 @@ import {
   fetchProjAuthConfig,
   type InitConfigPayload,
 } from "../cli/services/init";
-import { printLog } from "../cli/services/log-print";
 import { loadCliEnvFiles } from "../cli/utility/cli-load-env";
 import { resolveWsBaseUrl } from "../utils/backend-origin";
 import { DEFAULT_SOCKET_IDLE_CLOSE_MS } from "../utils/socket-idle-close";
@@ -170,7 +169,7 @@ function ensureRuntimeMode(): void {
   if (consoleOnlyFallback && !warnedIncompleteEnv) {
     warnedIncompleteEnv = true;
     console.error(
-      "auralogger: logging to console only. Set AURALOGGER_PROJECT_TOKEN + AURALOGGER_USER_SECRET, then AuraServer auto-loads project id/session/styles from /api/proj_auth on the first log (or call AuraServer.syncFromSecret(projectToken, userSecret)).",
+      "auralogger: logging to console only. Set AURALOGGER_PROJECT_TOKEN + AURALOGGER_USER_SECRET, then AuraServer auto-loads project id/session/styles from POST /api/{project_token}/proj_auth on the first log (or call AuraServer.syncFromSecret(projectToken, userSecret)).",
     );
   }
 }
@@ -199,13 +198,6 @@ function getSession(): string | null {
     return getOrCreateLocalSession();
   }
   return runtimeSession;
-}
-
-function getConfigStyles(): unknown {
-  if (consoleOnlyFallback) {
-    return undefined;
-  }
-  return runtimeStyles;
 }
 
 function padMicros(microseconds: number): string {
@@ -251,15 +243,14 @@ function maybeData(data: unknown): string | undefined {
   }
 }
 
-function buildWsUrl(projectId: string): string {
-  return `${resolveWsBaseUrl()}/${encodeURIComponent(projectId)}/create_log`;
+function buildWsUrl(projectToken: string): string {
+  return `${resolveWsBaseUrl()}/${encodeURIComponent(projectToken)}/create_log`;
 }
 
-function connectSocket(url: string, projectToken: string, userSecret: string): WebSocket {
+function connectSocket(url: string, userSecret: string): WebSocket {
   const ws = new WebSocket(url, {
     headers: {
-      authorization: `Bearer ${projectToken}`,
-      secret: userSecret,
+      authorization: `Bearer ${userSecret}`,
     },
   });
 
@@ -286,13 +277,6 @@ function ensureSocket(): WebSocket | null {
     return null;
   }
 
-  const projectId = getProjectId();
-  if (!projectId) {
-    console.error(
-      "auralogger: missing project id after token auth. Check your project token or /api/proj_auth response.",
-    );
-    return null;
-  }
   const projectToken = getProjectToken();
   if (!projectToken) {
     console.error(
@@ -308,7 +292,7 @@ function ensureSocket(): WebSocket | null {
     return null;
   }
 
-  const url = buildWsUrl(projectId);
+  const url = buildWsUrl(projectToken);
   if (socket && socketUrl === url && socket.readyState === WebSocket.OPEN) {
     return socket;
   }
@@ -319,7 +303,7 @@ function ensureSocket(): WebSocket | null {
     clearSocketIdleTimer();
     socket.close();
   }
-  socket = connectSocket(url, projectToken, userSecret);
+  socket = connectSocket(url, userSecret);
   socketUrl = url;
   return socket;
 }
@@ -338,7 +322,7 @@ async function processServerlogAsync(
   const session = getSession();
   if (!session) {
     console.error(
-      "auralogger: missing session after token auth. Check your project token or /api/proj_auth response.",
+      "auralogger: missing session after token auth. Check your project token or proj_auth response.",
     );
     return;
   }
@@ -356,13 +340,6 @@ async function processServerlogAsync(
   const normalizedData = maybeData(data);
   if (normalizedData) {
     payload.data = normalizedData;
-  }
-
-  try {
-    printLog(payload, getConfigStyles());
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    console.error(`auralogger: failed to print log: ${msg}`);
   }
 
   const ws = ensureSocket();
@@ -425,7 +402,7 @@ async function processServerlogAsync(
 export class AuraServer {
   /**
    * Configure server logging with project token and optional user secret override.
-   * Project id, session, and styles are fetched from `POST /api/proj_auth`.
+   * Project id, session, and styles are fetched from `POST /api/{project_token}/proj_auth`.
    */
   static configure(projectToken: string, userSecret?: string): void {
     overrideProjectToken = projectToken;

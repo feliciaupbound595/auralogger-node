@@ -1,6 +1,6 @@
 import type { ParsedFilter } from "../utility/parser";
 
-/** Body filter shape for `POST /api/logs`. */
+/** Body filter shape for `POST /api/{project_token}/logs`. */
 export interface ApiLogFilter {
   field: string;
   op?: string;

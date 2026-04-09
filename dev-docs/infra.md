@@ -1,24 +1,17 @@
-<!-- Generated: 2026-04-08 09:38:59 UTC -->
-# Infra notes (logging ingest)
+<!-- Generated: 2026-04-09 UTC -->
+# Backend / infra assumptions
 
-Backend-facing assumptions the Node SDK/CLI relies on for log ingest. (Hosted service vs self-hosted may differ in hardening; this is the contract the client code expects.)
+This package talks to a **hosted Auralogger backend**. Contract details (paths, headers, WS auth, persistence) live in **[`routes.md`](routes.md)**. Host defaults and env overrides: **[`api-urls.md`](api-urls.md)**.
 
-## WebSocket ingest endpoints
+## Ingest (high level)
 
-Two paths:
+- **WebSocket** upgrade is authenticated per backend rules (e.g. internal `ws_auth` using path `project_token`).
+- **Server route** `create_log`: backend may expect encrypted envelopes on the wire; **this repo** often still sends **plain JSON** — align with production.
+- **Browser route** `create_browser_logs`: plain JSON log frames per **`routes.md`**.
+- Persisted logs are queried over HTTP (**`POST /api/{project_token}/logs`**) from the CLI.
 
+## Operational note
 
-| Path                                    | Auth                                      | Producer         | SDK                                        | CLI helpers                              |
-| --------------------------------------- | ----------------------------------------- | ---------------- | ------------------------------------------ | ---------------------------------------- |
-| `**/{project_id}/create_log**`          | Yes (**`Authorization: Bearer <project token>`** + **`secret: <user secret>`**) | Node / server    | `**AuraServer**` (`auralogger-cli/server`) | `**server-check**`, `**test-serverlog**` |
-| `**/{project_id}/create_browser_logs**` | Yes (**`Authorization: Bearer <project token>`**) | Client ingest    | `**AuraClient**` (`auralogger-cli/client`) | `**client-check**`, `**test-clientlog**` |
+Redis / storage layout is **not** implemented in this repository. Treat the Python or API service as the source of truth for retention, encryption at rest, and rate limits.
 
-
-Treat browser ingest as **untrusted** server-side: validate, rate-limit, and abuse-protect as your deployment requires.
-
-## HTTP companion
-
-- `**POST /api/proj_auth`** — header **`secret`** only (project token) → project id, session, styles
-- `**POST /api/logs**` — filtered log fetch for `**get-logs**` (headers **`secret`** + **`user_secret`** when required)
-
-See `**routes.md**` for file pointers and env overrides.
+See **[`feature-flows.md`](feature-flows.md)** for which client paths hit which endpoints.

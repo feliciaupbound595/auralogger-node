@@ -2,14 +2,20 @@ import WebSocket from "ws";
 import chalk from "chalk";
 
 import { resolveWsBaseUrl } from "../../utils/backend-origin";
+import {
+  CLIENT_CHECK_START_PETER_ASIDES,
+  CLIENT_CHECK_SUCCESS_ASIDES,
+  pickAside,
+  ENV_RECOVERY_HINT_PLAIN,
+} from "../utility/aside-pools";
 import { loadCliEnvFiles } from "../utility/cli-load-env";
-import { printAside } from "../utility/cli-tone";
+import { maybePrintGenericSpice, printAside } from "../utility/cli-tone";
 import { resolveProjectContextForCliChecks } from "./init";
 
 const CONNECT_TIMEOUT_MS = 5000;
 
-function buildClientWsUrl(projectId: string): string {
-  return `${resolveWsBaseUrl()}/${encodeURIComponent(projectId)}/create_browser_logs`;
+function buildClientWsUrl(projectToken: string): string {
+  return `${resolveWsBaseUrl()}/${encodeURIComponent(projectToken)}/create_browser_logs`;
 }
 
 function padMicros(microseconds: number): string {
@@ -25,36 +31,33 @@ function createIsoTimestampWithMicroseconds(epochMs: number): string {
 
 /**
  * Same auth path as `server-check`: project token (env or prompt) + `proj_auth`
- * for id/session. The browser ingest socket authenticates with
- * `Authorization: Bearer <projectToken>`.
+ * for session hydration. Browser ingest is path-only auth via `{proj_token}`.
  */
 export async function runClientCheck(): Promise<void> {
   loadCliEnvFiles();
-  const { projectToken, projectId, session } = await resolveProjectContextForCliChecks();
+  const { projectToken, projectId, projectName, session } =
+    await resolveProjectContextForCliChecks();
 
-  const wsUrl = buildClientWsUrl(projectId);
+  const wsUrl = buildClientWsUrl(projectToken);
   console.log(
     chalk.dim("🌐 ") +
       chalk.white("Trying the ") +
       chalk.bold.white("browser-style") +
-      chalk.white(" log tunnel (Bearer-auth socket handshake)…"),
+      chalk.white(" log tunnel (path-only socket auth)…"),
   );
-  printAside(
-    "🕷️",
-    "Parker at the airport: They gave me the suit — not the Stark login. Socket hops in without the secret.",
-  );
+  {
+    const a = pickAside(CLIENT_CHECK_START_PETER_ASIDES);
+    printAside(a.emoji, a.line);
+  }
   await new Promise<void>((resolve, reject) => {
-    const ws = new WebSocket(wsUrl, {
-      headers: {
-        authorization: `Bearer ${projectToken}`,
-      },
-    });
+    const ws = new WebSocket(wsUrl);
 
     const timeout = setTimeout(() => {
       ws.terminate();
       reject(
         new Error(
-          "Browser tunnel never woke up — check network / adblock / VPN gremlins.",
+          "Browser-style socket never connected — check network/VPN, corporate proxy, and AURALOGGER_WS_URL if custom; token must match the project. " +
+            ENV_RECOVERY_HINT_PLAIN,
         ),
       );
     }, CONNECT_TIMEOUT_MS);
@@ -99,20 +102,24 @@ export async function runClientCheck(): Promise<void> {
     ws.once("error", (error: Error) => {
       clearTimeout(timeout);
       reject(
-        new Error(`Browser tunnel hiccuped — ${error.message}`),
+        new Error(
+          `Browser tunnel error (${error.message}). Same fixes as timeout: network, proxy, env in the right cwd, then rerun. ${ENV_RECOVERY_HINT_PLAIN}`,
+        ),
       );
     });
   });
 
   console.log("");
+  const projectLabel = projectName || projectId;
   console.log(
     chalk.green("🎉 ") +
       chalk.white("Browser-style path works — test log zoomed for project ") +
-      chalk.hex("#ffa657")(projectId) +
+      chalk.hex("#ffa657")(projectLabel) +
       chalk.white("."),
   );
-  printAside(
-    "🔨",
-    "Vision: \"But a thing isn't beautiful because it lasts.\" — anyway, door opened; no Soul Stone required.",
-  );
+  {
+    const a = pickAside(CLIENT_CHECK_SUCCESS_ASIDES);
+    printAside(a.emoji, a.line);
+  }
+  maybePrintGenericSpice();
 }

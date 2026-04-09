@@ -1,52 +1,105 @@
 # File map (Node package)
 
-“Where do I edit this?” — layout follows `**src/**` → `**dist/**` (`tsconfig` `**rootDir**`: `src`, `**outDir**`: `dist`).
+“Where do I edit this?” — TypeScript under **`src/`** compiles to **`dist/`** (`tsconfig`: **`rootDir`**: `src`, **`outDir`**: `dist`).
 
-## Package entry barrels (public SDK)
+**Feature-level flows (diagrams + credentials):** **[`feature-flows.md`](feature-flows.md)**.
 
-- `**src/index.ts**` / `**src/index.browser.ts**` — re-export `**client**` + `**server**` (browser entry uses `**server.browser**` stub).
-- `**src/client.ts**` — re-exports `**AuraClient**` from `**client/client-log.ts**`.
-- `**src/server.ts**` — re-exports `**AuraServer**` from `**server/server-log.ts**`.
-- `**src/server.browser.ts**` — stub `**AuraServer**` for browser bundles (`exports["./server"].browser`).
+---
 
-## CLI
+## Published surfaces (`package.json`)
 
-- `**src/cli/bin/auralogger.ts**` — `**auralogger**` command; `**loadCliEnvFiles()**` then dispatches subcommands.
-- `**src/cli/bin/quiet-dotenv-first.ts**` — early dotenv load helper for the bin.
-- `**src/cli/utility/cli-load-env.ts**` — loads `**.env**` / `**.env.local**` from cwd (CLI + `**AuraServer**` first-use on Node).
-- `**src/cli/utility/cli-tone.ts**` — `**printAside**` and tone helpers for `**init**` output.
+| Surface | `dist/` entry | `src/` source | Notes |
+|---------|---------------|---------------|--------|
+| Main package | `index.js` | `index.ts` / `index.browser.ts` | Browser build swaps **`server`** stub via `exports`. |
+| **`auralogger-cli/client`** | `client.js` | `client.ts` | Re-exports **`AuraClient`** from **`client/client-log.ts`**. |
+| **`auralogger-cli/server`** | `server.js` / `server.browser.js` | `server.ts` / `server.browser.ts` | Browser: stub server. |
+| **`auralogger-cli/server-check`** | `server-check.js` | `server-check.ts` | Thin export → **`cli/services/server-check`**. |
+| **`auralogger-cli/client-check`** | `client-check.js` | `client-check.ts` | Thin export → **`cli/services/client-check`**. |
+| **`auralogger-cli/init`** | `init.js` (see note) | — | Declared in **`package.json`**; if **`src/init.ts`** is missing, align publish entry or add a barrel file. |
+| **Bin** | `cli/bin/auralogger.js` | `cli/bin/auralogger.ts` | Command: **`auralogger`**. |
 
-## Command implementations (`src/cli/services/`)
+**Legacy / convenience:** **`src/client-log.ts`** — `clientlog()` helper + `closeClientlogSocket` wrapping **`AuraClient`**. **`src/client-log/client-log.ts`** re-exports from **`../client/client-log`** (compat shim).
 
-- `**init.ts**` — `**auralogger init**`; `**POST /api/proj_auth**`, secret line + snippets (`**Auralog**` env-based, `**AuraLog**` secret-based). No `auralogger.config.json`.
-- `**get-logs.ts**` — `**auralogger get-logs**`; auth via env + optional `**proj_auth**`; `**POST /api/logs**`.
-- `**server-check.ts**` — WebSocket probe to `**/{project_id}/create_log**` (authenticated).
-- `**client-check.ts**` — Same env as server-check; WS to `**/{project_id}/create_browser_logs**` (no secret on socket).
-- `**test-logger.ts**` — `**test-serverlog**` / `**test-clientlog**` smoke tests.
-- `**log-print.ts**`, `**get-logs-filters.ts**` — terminal output and filter wiring for `**get-logs**`.
+---
 
-## Runtime logging (library)
+## CLI binary
 
-- `**src/server/server-log.ts**` — `**AuraServer**`: Node `**ws**`, authenticated `**create_log**`, optional cwd env load, `**configure**` / `**syncFromSecret**`.
-- `**src/client/client-log.ts**` — `**AuraClient**`: global `**WebSocket**`, `**create_browser_logs**`, `**configure**`; no secret, no dotenv in browser.
+| File | Role |
+|------|------|
+| **`src/cli/bin/auralogger.ts`** | argv dispatch, **`KNOWN_COMMANDS`**, global **`main().catch`** + personality asides on fatal errors. |
+| **`src/cli/bin/quiet-dotenv-first.ts`** | Imported first by the bin to silence dotenv noise before the rest of the CLI loads. |
 
-## Shared utilities
+---
 
-- `**src/utils/env-config.ts**` — `**process.env**` keys (`**AURALOGGER_PROJECT_***`, `**NEXT_PUBLIC_***`, `**VITE_***`); no filesystem in-module.
-- `**src/utils/backend-origin.ts**` — `**resolveApiBaseUrl**`, `**resolveWsBaseUrl**`.
-- `**src/utils/http-utils.ts**` — `**parseErrorBody**`, etc.
-- `**src/utils/socket-idle-close.ts**` — idle close timeout for SDK sockets.
+## CLI services (`src/cli/services/`)
 
-## Parsing and styles (`src/cli/utility/`)
+| File | Command / role |
+|------|----------------|
+| **`init.ts`** | **`init`**: prompts, **`fetchProjAuthConfig`**, dotenv block, **`Auralog` / `AuraLog`** snippets. Exports **`resolveProjectTokenForInit`**, **`resolveUserSecretForInit`**, **`fetchProjAuthConfig`**, **`resolveProjectContextForCliChecks`**. |
+| **`get-logs.ts`** | **`get-logs`**: **`resolveGetLogsAuth`**, **`fetchLogsWithFallback`**, **`runGetLogsCore`**. |
+| **`get-logs-filters.ts`** | Filter JSON shape + validation for **`POST …/logs`** body. |
+| **`log-print.ts`** | Terminal line rendering (**`chalk`**) for log rows (`get-logs`, **`AuraServer`** local echo). |
+| **`server-check.ts`** | **`server-check`**: **`resolveProjectContextForCliChecks`** + WS **`create_log`**. |
+| **`client-check.ts`** | **`client-check`**: same auth resolution + WS **`create_browser_logs`**. |
+| **`test-logger.ts`** | **`test-serverlog`**, **`test-clientlog`** batch smoke sends. |
 
-- `**parser.ts**` — `**get-logs**` argv → filters.
-- `**log-styles.ts**` — style resolution (shared shape with client `**resolveLogStyleSpec**` usage via CLI path imports in client).
+---
 
-## Programmatic check exports (package subpaths)
+## CLI utilities (`src/cli/utility/`)
 
-- `**src/server-check.ts**`, `**src/client-check.ts**` — `**runServerCheck**` / `**runClientCheck**` for `**auralogger-cli/server-check**` and `**auralogger-cli/client-check**`. The CLI imports `**cli/services/***` directly.
+| File | Role |
+|------|------|
+| **`cli-load-env.ts`** | **`loadCliEnvFiles(cwd)`** — `.env` / `.env.local` for CLI + **`AuraServer`** first use. |
+| **`cli-tone.ts`** | **`printAside`**, **`maybePrintGenericSpice`**, etc. |
+| **`cli-personality-state.ts`** | Command attempt/success counters for adaptive copy. |
+| **`aside-pools.ts`** | Large const pools (asides, error templates, **`classifyErrorForAside`**). |
+| **`parser.ts`** | **`parseCommand`**: **`get-logs`** argv → structured filters. |
+| **`log-styles.ts`** | Style entries from **`proj_auth`**, **`resolveLogStyleSpec`** (shared with client imports). |
 
-## Init / config surface
+---
 
-- `**src/cli/services/init.ts**` exports helpers such as `**resolveProjectTokenForInit**`, `**resolveUserSecretForInit**`, and `**resolveProjectContextForCliChecks**` for other CLI commands that need `**proj_auth**` and authenticated routes.
+## SDK — server (`src/server/`)
 
+| File | Role |
+|------|------|
+| **`server-log.ts`** | **`AuraServer`**: **`configure`**, **`syncFromSecret`**, **`proj_auth` hydration**, Node **`ws`** to **`/{proj_token}/create_log`**, **`Bearer` user secret**, idle socket close. |
+
+---
+
+## SDK — client (`src/client/`)
+
+| File | Role |
+|------|------|
+| **`client-log.ts`** | **`AuraClient`**: **`configure({ projectToken })`**, **`proj_auth`**, global **`WebSocket`**, **`create_browser_logs`**, idle close. |
+
+---
+
+## Root barrels (`src/`)
+
+| File | Role |
+|------|------|
+| **`index.ts`**, **`index.browser.ts`** | Package entry; browser variant excludes full server. |
+| **`client.ts`**, **`server.ts`**, **`server.browser.ts`** | Subpath exports for **`exports`** field. |
+| **`server-check.ts`**, **`client-check.ts`** | Programmatic check entrypoints. |
+
+---
+
+## Shared utils (`src/utils/`)
+
+| File | Role |
+|------|------|
+| **`backend-origin.ts`** | **`resolveApiBaseUrl`**, **`resolveWsBaseUrl`**, **`buildProjAuthUrl`**, **`buildProjectLogsUrl`**, defaults. Doc: **`api-urls.md`**. |
+| **`env-config.ts`** | **`AURALOGGER_*`**, **`NEXT_PUBLIC_*`**, **`VITE_*`** readers; **`tryParseResolvedStyles`**, etc. |
+| **`http-utils.ts`** | **`parseErrorBody`** for failed **`fetch`**. |
+| **`socket-idle-close.ts`** | Default idle timeout constant for SDK sockets. |
+
+---
+
+## Doc maintenance
+
+When you add a **`src/`** file that participates in HTTP/WS or a new command:
+
+1. **[`file-map.md`](file-map.md)** (this file) — one row or bullet.
+2. **[`feature-flows.md`](feature-flows.md)** — diagram or table row if the flow is new.
+3. **[`routes.md`](routes.md)** — if the wire contract changes.
+4. **[`bdd.md`](bdd.md)** — if user-visible behaviour changes.

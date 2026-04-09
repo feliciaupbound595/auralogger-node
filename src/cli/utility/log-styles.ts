@@ -19,6 +19,8 @@ export interface ApiStyleRow {
 
 export interface ProjAuthConfigPayload {
   project_id: string | null;
+  /** Optional: allows CLI/SDK to label output with a human name. */
+  project_name?: string | null;
   session: string | null;
   styles: Record<string, LogStyleSpec | Record<string, unknown>>[];
 }
@@ -77,6 +79,60 @@ export function buildStyleEntriesFromApi(
   }
 
   return Object.entries(map).map(([type, spec]) => ({ [type]: spec }));
+}
+
+/** Map `proj_auth` per-type style objects (camelCase API fields) to row `styles` for {@link buildStyleEntriesFromApi}. */
+function mapProjAuthTypeStyle(spec: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const pairs: [string, string][] = [
+    ["typeColor", "type-color"],
+    ["locationColor", "location-color"],
+    ["timeColor", "time-color"],
+    ["messageColor", "message-color"],
+    ["textColor", "text-color"],
+    ["backgroundColor", "background"],
+  ];
+  if (typeof spec.icon === "string") {
+    out.icon = spec.icon;
+  }
+  for (const [camel, kebab] of pairs) {
+    if (camel in spec) {
+      out[kebab] = spec[camel];
+    }
+  }
+  if ("borderColor" in spec) {
+    out.borderColor = spec.borderColor;
+  }
+  return out;
+}
+
+/**
+ * Normalizes `styles` from `POST /api/{project_token}/proj_auth`:
+ * - `null` / missing → default-only entries
+ * - array → {@link buildStyleEntriesFromApi}
+ * - object keyed by log type (each value: API shape with `typeColor`, …) → rows for {@link buildStyleEntriesFromApi}
+ */
+export function buildStyleEntriesFromProjAuth(
+  styles: unknown,
+): Record<string, LogStyleSpec | Record<string, unknown>>[] {
+  if (styles === null || styles === undefined) {
+    return buildStyleEntriesFromApi([]);
+  }
+  if (Array.isArray(styles)) {
+    return buildStyleEntriesFromApi(styles);
+  }
+  if (!isPlainObject(styles)) {
+    return buildStyleEntriesFromApi([]);
+  }
+  const rows: unknown[] = [];
+  for (const [type, spec] of Object.entries(styles)) {
+    const t = type.trim();
+    if (!t || !isPlainObject(spec)) {
+      continue;
+    }
+    rows.push({ type: t, styles: mapProjAuthTypeStyle(spec) });
+  }
+  return buildStyleEntriesFromApi(rows);
 }
 
 /**

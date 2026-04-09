@@ -1,5 +1,8 @@
 /** Environment variable names for Auralogger (process.env only; no file reads). */
 export const ENV_PROJECT_TOKEN = "AURALOGGER_PROJECT_TOKEN";
+/** Same ciphertext token, exposed to browser bundles (Next/Vite). */
+export const ENV_NEXT_PUBLIC_PROJECT_TOKEN = `NEXT_PUBLIC_${ENV_PROJECT_TOKEN}`;
+export const ENV_VITE_PROJECT_TOKEN = `VITE_${ENV_PROJECT_TOKEN}`;
 export const ENV_USER_SECRET = "AURALOGGER_USER_SECRET";
 
 // Public env vars (must be visible to client bundles).
@@ -53,7 +56,11 @@ export function getResolvedStylesKey(): string[] {
 }
 
 export function getResolvedProjectToken(): string | undefined {
-  return trimEnv(ENV_PROJECT_TOKEN);
+  return (
+    trimEnv(ENV_PROJECT_TOKEN) ??
+    trimEnv(ENV_NEXT_PUBLIC_PROJECT_TOKEN) ??
+    trimEnv(ENV_VITE_PROJECT_TOKEN)
+  );
 }
 
 export function getResolvedUserSecret(): string | undefined {
@@ -113,7 +120,7 @@ export function requireProjectTokenForCli(): string {
   const token = getResolvedProjectToken();
   if (!token) {
     throw new Error(
-      `Missing ${ENV_PROJECT_TOKEN} — add it to .env (or your shell), or run auralogger init and paste when asked.`,
+      `Missing ${ENV_PROJECT_TOKEN} (or ${ENV_NEXT_PUBLIC_PROJECT_TOKEN} / ${ENV_VITE_PROJECT_TOKEN}) — add it to .env (or your shell), or run auralogger init and paste when asked.`,
     );
   }
   return token;
@@ -149,17 +156,11 @@ export function requireProjectSessionForCli(): string {
   return session;
 }
 
-/** True when token, user secret, id, session, and styles are all configured. */
+/** True when project token, user secret, and session are set (id/styles optional — SDKs can hydrate via proj_auth). */
 export function isFullRuntimeEnvConfigured(): boolean {
-  if (
-    !getResolvedProjectToken() ||
-    !getResolvedUserSecret() ||
-    !getResolvedProjectId() ||
-    !getResolvedSession()
-  ) {
-    return false;
-  }
-  return tryParseResolvedStyles() !== null;
+  return Boolean(
+    getResolvedProjectToken() && getResolvedUserSecret() && getResolvedSession(),
+  );
 }
 
 /**

@@ -48,3 +48,20 @@ export function resolveWsBaseUrl(): string {
   }
   return httpOriginToWsBase(DEFAULT_AURALOGGER_ORIGIN);
 }
+
+/**
+ * `POST /api/{project_token}/proj_auth` — token is URL-encoded in the path (no `secret` header).
+ */
+export function buildProjAuthUrl(apiBaseUrl: string, projectToken: string): string {
+  const base = trimTrailingSlash(apiBaseUrl.trim());
+  return `${base}/api/${encodeURIComponent(projectToken.trim())}/proj_auth`;
+}
+
+/**
+ * `POST /api/{project_token}/logs` — filtered log fetch (`get-logs`).
+ * Header **`secret`** must be the **user secret** (not the project token).
+ */
+export function buildProjectLogsUrl(apiBaseUrl: string, projectToken: string): string {
+  const base = trimTrailingSlash(apiBaseUrl.trim());
+  return `${base}/api/${encodeURIComponent(projectToken.trim())}/logs`;
+}

@@ -2,14 +2,21 @@ import WebSocket from "ws";
 import chalk from "chalk";
 
 import { resolveWsBaseUrl } from "../../utils/backend-origin";
+import {
+  pickAside,
+  ENV_RECOVERY_HINT_PLAIN,
+  SERVER_CHECK_FAIL_WOLVERINE_ASIDES,
+  SERVER_CHECK_OPEN_ASIDES,
+  SERVER_CHECK_SUCCESS_THOR_ASIDES,
+} from "../utility/aside-pools";
 import { loadCliEnvFiles } from "../utility/cli-load-env";
-import { printAside } from "../utility/cli-tone";
+import { maybePrintGenericSpice, printAside } from "../utility/cli-tone";
 import { resolveProjectContextForCliChecks } from "./init";
 
 const CONNECT_TIMEOUT_MS = 5000;
 
-function buildWsUrl(projectId: string): string {
-  return `${resolveWsBaseUrl()}/${encodeURIComponent(projectId)}/create_log`;
+function buildWsUrl(projectToken: string): string {
+  return `${resolveWsBaseUrl()}/${encodeURIComponent(projectToken)}/create_log`;
 }
 
 function padMicros(microseconds: number): string {
@@ -25,30 +32,37 @@ function createIsoTimestampWithMicroseconds(epochMs: number): string {
 
 export async function runServerCheck(): Promise<void> {
   loadCliEnvFiles();
-  const { projectToken, userSecret, projectId, session } =
+  const { projectToken, userSecret, projectId, projectName, session } =
     await resolveProjectContextForCliChecks();
 
-  const wsUrl = buildWsUrl(projectId);
+  const wsUrl = buildWsUrl(projectToken);
   console.log(
     chalk.dim("📡 ") +
       chalk.white("Pinging the ") +
       chalk.bold.white("server") +
       chalk.white(" logger — one tiny test log coming up…"),
   );
-  printAside("🛡️", "Rogers: Shield's up — your secret is the vibranium badge on this socket.");
+  {
+    const a = pickAside(SERVER_CHECK_OPEN_ASIDES);
+    printAside(a.emoji, a.line);
+  }
   await new Promise<void>((resolve, reject) => {
     const ws = new WebSocket(wsUrl, {
       headers: {
-        authorization: `Bearer ${projectToken}`,
-        secret: userSecret,
+        authorization: `Bearer ${userSecret}`,
       },
     });
 
     const timeout = setTimeout(() => {
       ws.terminate();
+      {
+        const w = pickAside(SERVER_CHECK_FAIL_WOLVERINE_ASIDES);
+        printAside(w.emoji, w.line);
+      }
       reject(
         new Error(
-          "Gave up waiting for the server logger — still quiet. Check network / firewall / VPN vibes.",
+          "Server logger socket didn't open in time — still quiet. Check VPN/Wi‑Fi, firewall, AURALOGGER_WS_URL if you override it, and that token + user secret match this project. " +
+            ENV_RECOVERY_HINT_PLAIN,
         ),
       );
     }, CONNECT_TIMEOUT_MS);
@@ -92,18 +106,29 @@ export async function runServerCheck(): Promise<void> {
 
     ws.once("error", (error: Error) => {
       clearTimeout(timeout);
+      {
+        const w = pickAside(SERVER_CHECK_FAIL_WOLVERINE_ASIDES);
+        printAside(w.emoji, w.line);
+      }
       reject(
-        new Error(`Server pipe wouldn't open — ${error.message}`),
+        new Error(
+          `Server pipe wouldn't open (${error.message}). Verify creds in .env, run from the folder that loads them, then try again. ${ENV_RECOVERY_HINT_PLAIN}`,
+        ),
       );
     });
   });
 
   console.log("");
+  const projectLabel = projectName || projectId;
   console.log(
     chalk.green("🎉 ") +
       chalk.white("Server logger is alive — a test log just took off for project ") +
-      chalk.hex("#ffa657")(projectId) +
+      chalk.hex("#ffa657")(projectLabel) +
       chalk.white("."),
   );
-  printAside("⚡", "Thor: The Bifrost fired — if Asgard's quiet, blame Heimdall's Wi‑Fi, not the swing.");
+  {
+    const a = pickAside(SERVER_CHECK_SUCCESS_THOR_ASIDES);
+    printAside(a.emoji, a.line);
+  }
+  maybePrintGenericSpice();
 }
