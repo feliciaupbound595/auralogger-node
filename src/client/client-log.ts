@@ -8,9 +8,7 @@ import { parseErrorBody } from "../utils/http-utils";
 import { printLog } from "../cli/services/log-print";
 import { buildStyleEntriesFromProjAuth } from "../cli/utility/log-styles";
 
-export interface AuraClientConfigureOptions {
-  projectToken: string;
-}
+
 
 interface WebSocketLike {
   readyState: number;
@@ -399,7 +397,7 @@ async function ensureSocket(): Promise<WebSocketLike | null> {
     if (!warnedMissingProjectToken) {
       warnedMissingProjectToken = true;
       console.error(
-        "auralogger: missing project token. Call AuraClient.configure({ projectToken }) before logging.",
+        "auralogger: missing project token. Call AuraClient.configure( projectToken ) before logging.",
       );
     }
     return null;
@@ -526,8 +524,16 @@ async function processClientlogAsync(
 }
 
 export class AuraClient {
-  static configure(options: AuraClientConfigureOptions): void {
-    const token = options.projectToken.trim();
+  /**
+   * @param projectToken Project token string, or `{ projectToken }` (object form is accepted for convenience).
+   */
+  static configure(projectToken: string | { projectToken: unknown }): void {
+    const raw =
+      typeof projectToken === "string"
+        ? projectToken
+        : projectToken?.projectToken;
+    const token =
+      typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
     if (!token) {
       throw new Error("auralogger: projectToken cannot be empty.");
     }

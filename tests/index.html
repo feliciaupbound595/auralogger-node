@@ -26,6 +26,7 @@
     <p id="status">Ready</p>
 
     <script type="module">
+      /* Browser harness: ./client-page.mjs exports runClientTest. Do not import ./client.js (Node CJS / SDK bundle). */
       import { runClientTest, runServerTest } from "./client-page.mjs";
       const statusEl = document.getElementById("status");
       const clientButton = document.getElementById("client-log-btn");

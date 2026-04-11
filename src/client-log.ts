@@ -1,6 +1,6 @@
-import { AuraClient, type AuraClientConfigureOptions } from "./client/client-log";
+import { AuraClient } from "./client/client-log";
 
-export { AuraClient, type AuraClientConfigureOptions };
+export { AuraClient };
 
 export function clientlog(
   type: string,

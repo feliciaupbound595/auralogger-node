@@ -88,6 +88,7 @@ var require_env_config = __commonJS({
     exports.getResolvedProjectId = getResolvedProjectId;
     exports.getResolvedSession = getResolvedSession;
     exports.tryParseResolvedStyles = tryParseResolvedStyles;
+    exports.resolveStylesForConsolePrint = resolveStylesForConsolePrint;
     exports.parseResolvedStylesOrThrow = parseResolvedStylesOrThrow;
     exports.requireProjectTokenForCli = requireProjectTokenForCli;
     exports.requireUserSecretForCli = requireUserSecretForCli;
@@ -165,6 +166,13 @@ var require_env_config = __commonJS({
       } catch {
         return null;
       }
+    }
+    function resolveStylesForConsolePrint(runtimeFromProjAuth) {
+      const fromEnv = tryParseResolvedStyles();
+      if (fromEnv !== null) {
+        return fromEnv;
+      }
+      return runtimeFromProjAuth ?? [];
     }
     function parseResolvedStylesOrThrow() {
       const raw = trimEnvAny(getResolvedStylesKey());
@@ -1894,19 +1902,44 @@ var require_log_print = __commonJS({
     exports.printLog = printLog;
     var chalk_1 = __importDefault(require_source());
     var log_styles_1 = require_log_styles();
+    function formatCreatedAtTimeOnly(createdAt) {
+      if (createdAt == null || createdAt === "") {
+        return "";
+      }
+      const d = createdAt instanceof Date ? createdAt : new Date(typeof createdAt === "string" || typeof createdAt === "number" ? createdAt : String(createdAt));
+      if (Number.isNaN(d.getTime())) {
+        return typeof createdAt === "string" ? createdAt : String(createdAt);
+      }
+      const h = String(d.getUTCHours()).padStart(2, "0");
+      const m = String(d.getUTCMinutes()).padStart(2, "0");
+      const s = String(d.getUTCSeconds()).padStart(2, "0");
+      return `${h}:${m}:${s}`;
+    }
     function printLogPlain(log) {
-      const ts = log.created_at ?? "";
+      const ts = formatCreatedAtTimeOnly(log.created_at);
       const type = typeof log.type === "string" ? log.type : String(log.type ?? "");
       const loc = String(log.location ?? "");
       const msg = String(log.message ?? "");
       console.log(`${ts} ${type} ${loc}`.trim(), msg);
     }
+    function rgbPaint(rgb, text) {
+      const s = String(text ?? "");
+      const [r, g, b] = rgb;
+      if (![r, g, b].every((n) => typeof n === "number" && Number.isFinite(n))) {
+        return s;
+      }
+      try {
+        return chalk_1.default.rgb(r, g, b)(s);
+      } catch {
+        return s;
+      }
+    }
     function printLog(log, configStyles) {
       try {
         const spec = (0, log_styles_1.resolveLogStyleSpec)(typeof log.type === "string" ? log.type : "", configStyles);
         const loc = String(log.location ?? "");
-        console.log(chalk_1.default.rgb(...spec["time-color"])(log.created_at), spec.icon, chalk_1.default.rgb(...spec["type-color"])(log.type), chalk_1.default.rgb(...spec["location-color"])(loc));
-        console.log(chalk_1.default.rgb(...spec["message-color"])(String(log.message ?? "")));
+        console.log(rgbPaint(spec["time-color"], formatCreatedAtTimeOnly(log.created_at)), spec.icon, rgbPaint(spec["type-color"], log.type), rgbPaint(spec["location-color"], loc));
+        console.log(rgbPaint(spec["message-color"], String(log.message ?? "")));
       } catch {
         printLogPlain(log);
       }
@@ -2196,7 +2229,7 @@ var require_client_log = __commonJS({
       if (!projectToken) {
         if (!warnedMissingProjectToken) {
           warnedMissingProjectToken = true;
-          console.error("auralogger: missing project token. Call AuraClient.configure({ projectToken }) before logging.");
+          console.error("auralogger: missing project token. Call AuraClient.configure( projectToken ) before logging.");
         }
         return null;
       }
@@ -2237,9 +2270,7 @@ var require_client_log = __commonJS({
     }
     async function processClientlogAsync(type, message, nowMs, location, data) {
       const { CONNECTING, OPEN } = wsStates();
-      if (resolvedProjectToken()) {
-        await ensureHydratedRuntimeConfig();
-      }
+      await ensureHydratedRuntimeConfig();
       const payload = {
         type: normalizeType(type),
         message: String(message ?? ""),
@@ -2255,7 +2286,7 @@ var require_client_log = __commonJS({
         payload.data = normalizedData;
       }
       deferTask(() => {
-        (0, log_print_1.printLog)(payload, runtimeStyles ?? []);
+        (0, log_print_1.printLog)(payload, (0, env_config_1.resolveStylesForConsolePrint)(runtimeStyles));
       });
       try {
         const ws = await ensureSocket();
@@ -2304,8 +2335,12 @@ var require_client_log = __commonJS({
       }
     }
     var AuraClient = class {
-      static configure(options) {
-        const token = options.projectToken.trim();
+      /**
+       * @param projectToken Project token string, or `{ projectToken }` (object form is accepted for convenience).
+       */
+      static configure(projectToken) {
+        const raw = typeof projectToken === "string" ? projectToken : projectToken?.projectToken;
+        const token = typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
         if (!token) {
           throw new Error("auralogger: projectToken cannot be empty.");
         }

@@ -40,7 +40,7 @@ Resolution order for each publishable field is: **`NEXT_PUBLIC_*`**, then **`VIT
 
 ## Who loads what
 
-**`AuraClient` (browser):** reads the project token you pass to `AuraClient.configure({ projectToken })` (often from `NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN` / `VITE_AURALOGGER_PROJECT_TOKEN`), then hydrates through `POST /api/{project_token}/proj_auth` (token in path). No `.env` file reads in the browser.
+**`AuraClient` (browser):** reads the project token you pass to `AuraClient.configure(  projectToken )` (often from `NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN` / `VITE_AURALOGGER_PROJECT_TOKEN`), then hydrates through `POST /api/{project_token}/proj_auth` (token in path). No `.env` file reads in the browser.
 
 **`AuraServer` (Node):** reads **`process.env`**; on first `AuraServer.log` or `syncFromSecret` it may **once** load **`.env`** and **`.env.local`** from **`process.cwd()`** (Node only). Private creds must only exist in environments you treat as private.
 

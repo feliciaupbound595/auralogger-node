@@ -16,7 +16,7 @@ let configured = false;
 
 function ensureConfigured() {
   if (configured) return;
-  AuraClient.configure({ projectToken: PROJECT_TOKEN });
+  AuraClient.configure(PROJECT_TOKEN);
   configured = true;
 }
 

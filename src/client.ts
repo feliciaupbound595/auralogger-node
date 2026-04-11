@@ -1,1 +1,1 @@
-export { AuraClient, type AuraClientConfigureOptions } from "./client/client-log";
+export { AuraClient } from "./client/client-log";

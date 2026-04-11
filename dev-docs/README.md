@@ -19,7 +19,7 @@
 ## Current package behavior (high level)
 
 - **`AuraServer`** (Node, `auralogger-cli/server`): uses `ws`. **`POST /api/{project_token}/proj_auth`** (token in path). After configure/env, id/session/styles load from **`proj_auth`**. Server ingest WebSocket: **`/{proj_token}/create_log`** with **`Authorization: Bearer <user_secret>`** (see **`server-log.ts`**). **`AuraServer.log` does not print successful logs to the console** — only errors / connection issues. **`auralogger get-logs`** still prints rows with **`chalk`** via **`log-print.ts`** when styles resolve. Browser bundles that import `./server` get **`server.browser.ts`** (stub).
-- **`AuraClient`** (browser-safe, `auralogger-cli/client`): **global `WebSocket`**, **no user secret**. **`AuraClient.configure({ projectToken })`** only; hydrates via **`POST /api/{project_token}/proj_auth`**. Browser ingest: **`/{proj_token}/create_browser_logs`** (path token in URL; no custom socket headers). **`AuraClient.log` does not mirror successful logs to the browser console** — only problems log with **`console.error`** / **`console.warn`**.
+- **`AuraClient`** (browser-safe, `auralogger-cli/client`): **global `WebSocket`**, **no user secret**. **`AuraClient.configure(projectToken )`** only; hydrates via **`POST /api/{project_token}/proj_auth`**. Browser ingest: **`/{proj_token}/create_browser_logs`** (path token in URL; no custom socket headers). **`AuraClient.log` does not mirror successful logs to the browser console** — only problems log with **`console.error`** / **`console.warn`**.
 
 ## CLI
 

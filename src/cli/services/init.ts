@@ -204,7 +204,7 @@ function buildAuraClientWrapperSnippet(): string {
     `    throw new Error('Missing NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN')`,
     `  }`,
     ``,
-    `  AuraClient.configure({ projectToken })`,
+    `  AuraClient.configure(projectToken )`,
     `  configured = true`,
     `}`,
     ``,

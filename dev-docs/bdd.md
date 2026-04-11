@@ -38,7 +38,7 @@
 
 ### Scenario: configure is project-token only; runtime hydrates via proj_auth
 
-- **Given** **`AuraClient.configure({ projectToken })`** was called with a non-empty token (often from **`NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`** / **`VITE_AURALOGGER_PROJECT_TOKEN`**)
+- **Given** **`AuraClient.configure( projectToken )`** was called with a non-empty token (often from **`NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`** / **`VITE_AURALOGGER_PROJECT_TOKEN`**)
 - **When** the first log tries to open a socket or needs **`proj_auth`** metadata (project id, session, styles in memory)
 - **Then** the client may call **`POST /api/{project_token}/proj_auth`** once (single-flight) with the token in the path
 - **And** project id, session, and styles are held in memory after a successful response
@@ -61,7 +61,7 @@
 - **When** the CLI authenticates via **`POST /api/{project_token}/proj_auth`**
 - **Then** it prints up to **five** dotenv lines when values are new: **`AURALOGGER_PROJECT_TOKEN`**, **`AURALOGGER_USER_SECRET`**, **`AURALOGGER_PROJECT_SESSION`**, **`NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`**, **`VITE_AURALOGGER_PROJECT_TOKEN`** (last two match the server token); lines already in env are omitted with a short note
 - **And** it does **not** print project id or styles into `.env` (those hydrate via **`proj_auth`** at runtime)
-- **And** it prints **`Auralog`** (**`AuraClient.configure({ projectToken })`**) and **`AuraLog`** (**`AuraServer.configure(projectToken, userSecret)`**) snippets for separate files
+- **And** it prints **`Auralog`** (**`AuraClient.configure(projectToken)`**) and **`AuraLog`** (**`AuraServer.configure(projectToken, userSecret)`**) snippets for separate files
 
 ### Scenario: `server-check` hits authenticated ingest WS
 
