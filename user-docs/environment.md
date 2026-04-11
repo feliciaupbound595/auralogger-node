@@ -40,7 +40,7 @@ Resolution order for each publishable field is: **`NEXT_PUBLIC_*`**, then **`VIT
 
 ## Who loads what
 
-**`AuraClient` (browser):** reads the project token you pass to `AuraClient.configure({ projectToken })` (often from `NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN` / `VITE_AURALOGGER_PROJECT_TOKEN`), then hydrates through `POST /api/{project_token}/proj_auth` (token in path). No `.env` file reads in the browser.
+**`AuraClient` (browser):** reads the project token you pass to `AuraClient.configure(  projectToken )` (often from `NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN` / `VITE_AURALOGGER_PROJECT_TOKEN`), then hydrates through `POST /api/{project_token}/proj_auth` (token in path). No `.env` file reads in the browser.
 
 **`AuraServer` (Node):** reads **`process.env`**; on first `AuraServer.log` or `syncFromSecret` it may **once** load **`.env`** and **`.env.local`** from **`process.cwd()`** (Node only). Private creds must only exist in environments you treat as private.
 
@@ -100,7 +100,7 @@ VITE_AURALOGGER_PROJECT_TOKEN="your-project-token"
 
 - **`server-check` / variable missing** — Run from the directory that contains your `.env`, or export vars in the shell (`process.cwd()`).
 - **Styles errors** — Value must be valid JSON array string; fix the env value or remove it so **`get-logs`** can fetch styles via **`proj_auth`**.
-- **`AuraServer` console-only** — Ensure **`AURALOGGER_PROJECT_TOKEN`** and **`AURALOGGER_USER_SECRET`** (or call **`syncFromSecret` / `configure`**) so auth + ingest can run; `proj_auth` uses the token in the URL path.
+- **`AuraServer` not streaming** — Ensure **`AURALOGGER_PROJECT_TOKEN`** and **`AURALOGGER_USER_SECRET`** (or call **`syncFromSecret` / `configure`**) so auth + ingest can run; `proj_auth` uses the token in the URL path. Misconfiguration may log once to the console; successful logs are not printed locally.
 - **Client bundle + `ws`** — Use **`auralogger-cli/client`**; the package maps **`./server`** to a browser stub so `ws` is not pulled in for `AuraServer` imports on the client.
 
 ### Advanced overrides (contributors / self-hosted backends)

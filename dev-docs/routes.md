@@ -60,7 +60,7 @@ Implementation files: **`src/server/server-log.ts`**, **`src/client/client-log.t
 
 ### `WS /{proj_token}/create_browser_logs` (browser ingest — `AuraClient`, `client-check`)
 
-- **Path segment:** **project token** (same string as **`AURALOGGER_PROJECT_TOKEN`** / what you pass to **`AuraClient.configure({ projectToken })`**).
+- **Path segment:** **project token** (same string as **`AURALOGGER_PROJECT_TOKEN`** / what you pass to **`AuraClient.configure(projectToken )`**).
 - **Used by:**
   - **`AuraClient`** (**`src/client/client-log.ts`**)
   - **`auralogger client-check`** (**`src/cli/services/client-check.ts`**)

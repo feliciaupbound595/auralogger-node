@@ -4,12 +4,15 @@ import {
   fetchProjAuthConfig,
   type InitConfigPayload,
 } from "../cli/services/init";
+import { printLog } from "../cli/services/log-print";
 import { loadCliEnvFiles } from "../cli/utility/cli-load-env";
+import type { ProjAuthConfigPayload } from "../cli/utility/log-styles";
 import { resolveWsBaseUrl } from "../utils/backend-origin";
 import { DEFAULT_SOCKET_IDLE_CLOSE_MS } from "../utils/socket-idle-close";
 import {
   getResolvedProjectToken,
   getResolvedUserSecret,
+  resolveStylesForConsolePrint,
 } from "../utils/env-config";
 
 const LOCAL_FALLBACK_SESSION = "auralogger-local-session";
@@ -29,7 +32,7 @@ let overrideProjectToken: string | undefined;
 let overrideUserSecret: string | undefined;
 let runtimeProjectId: string | null = null;
 let runtimeSession: string | null = null;
-let runtimeStyles: unknown = undefined;
+let runtimeStyles: ProjAuthConfigPayload["styles"] | undefined = undefined;
 
 let consoleOnlyFallback = false;
 let localSessionId: string | null = null;
@@ -189,9 +192,7 @@ function getUserSecret(): string | null {
   return resolvedUserSecret() ?? null;
 }
 
-function getProjectId(): string | null {
-  return runtimeProjectId;
-}
+
 
 function getSession(): string | null {
   if (consoleOnlyFallback) {
@@ -341,6 +342,10 @@ async function processServerlogAsync(
   if (normalizedData) {
     payload.data = normalizedData;
   }
+
+  deferTask(() => {
+    printLog(payload, resolveStylesForConsolePrint(runtimeStyles));
+  });
 
   const ws = ensureSocket();
   if (!ws) {

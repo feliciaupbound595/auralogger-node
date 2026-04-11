@@ -1,4 +1,4 @@
-<!-- Generated: 2026-04-08 09:38:59 UTC -->
+<!-- Generated: 2026-04-09 12:00:00 UTC -->
 
 **Diagrams and file-level paths:** see **[`feature-flows.md`](feature-flows.md)**.
 
@@ -6,19 +6,19 @@
 
 ## Feature: server logs (`AuraServer`)
 
-### Scenario: logs print locally
+### Scenario: logs stream without local success console noise
 
 - **Given** the user calls **`AuraServer.log(type, message, location?, data?)`**
 - **When** the deferred handler runs
-- **Then** a log line is printed (styled in terminal when styles resolve; otherwise plain)
-- **And** failures to reach the backend do not crash the process (errors surface as console messages / non-fatal paths)
+- **Then** a log payload is sent on the ingest WebSocket when configuration and the socket allow it, **without** printing that log to the local console on success
+- **And** failures to reach the backend do not crash the process (errors surface as **`console.error`** / **`console.warn`** / non-fatal paths)
 
 ### Scenario: streaming needs usable token + user-secret paths
 
 - **Given** **`AURALOGGER_PROJECT_TOKEN`** or **`AURALOGGER_USER_SECRET`** is missing and **`AuraServer`** was not configured with usable values
 - **When** the user calls **`AuraServer.log(...)`**
-- **Then** logs still print locally where applicable
-- **And** streaming does not succeed without both credentials on routes that require both (console-only or error messaging per implementation)
+- **Then** streaming does not succeed without both credentials on routes that require both (silent skip or **`console.error`** / one-time incomplete-config messaging per implementation)
+- **And** successful logs are not mirrored to the local console
 
 ### Scenario: after configure, backend metadata can come from API
 
@@ -38,20 +38,20 @@
 
 ### Scenario: configure is project-token only; runtime hydrates via proj_auth
 
-- **Given** **`AuraClient.configure({ projectToken })`** was called with a non-empty token (often from **`NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`** / **`VITE_AURALOGGER_PROJECT_TOKEN`**)
-- **When** the first log tries to open a socket or needs session/styles for console output
+- **Given** **`AuraClient.configure( projectToken )`** was called with a non-empty token (often from **`NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`** / **`VITE_AURALOGGER_PROJECT_TOKEN`**)
+- **When** the first log tries to open a socket or needs **`proj_auth`** metadata (project id, session, styles in memory)
 - **Then** the client may call **`POST /api/{project_token}/proj_auth`** once (single-flight) with the token in the path
 - **And** project id, session, and styles are held in memory after a successful response
 - **And** the ingest socket targets **`/{proj_token}/create_browser_logs`** where **`proj_token`** is the configured project token (**path-only auth**; no Bearer header on the socket)
 - **And** it does not send the user secret
 - **And** payload shape matches server ingest expectations (type, message, session, **`created_at`**, optional location / data)
 
-### Scenario: local preview tolerates bad style config
+### Scenario: styles do not drive local console output
 
 - **Given** **`proj_auth`** styles are missing or malformed after hydration
 - **When** **`AuraClient.log`** runs
-- **Then** a plain fallback console line can still appear (per **`resolveLogStyleSpec`** / defaults)
-- **And** socket behavior degrades gracefully (e.g. missing project id after failed `proj_auth` → error message, not opaque failures)
+- **Then** successful logs are still not printed to the browser console; ingest may proceed when project id + session are valid
+- **And** socket behavior degrades gracefully (e.g. missing project id after failed `proj_auth` → **`console.error`**, not opaque failures)
 
 ## Feature: CLI
 
@@ -61,7 +61,7 @@
 - **When** the CLI authenticates via **`POST /api/{project_token}/proj_auth`**
 - **Then** it prints up to **five** dotenv lines when values are new: **`AURALOGGER_PROJECT_TOKEN`**, **`AURALOGGER_USER_SECRET`**, **`AURALOGGER_PROJECT_SESSION`**, **`NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`**, **`VITE_AURALOGGER_PROJECT_TOKEN`** (last two match the server token); lines already in env are omitted with a short note
 - **And** it does **not** print project id or styles into `.env` (those hydrate via **`proj_auth`** at runtime)
-- **And** it prints **`Auralog`** (**`AuraClient.configure({ projectToken })`**) and **`AuraLog`** (**`AuraServer.configure(projectToken, userSecret)`**) snippets for separate files
+- **And** it prints **`Auralog`** (**`AuraClient.configure(projectToken)`**) and **`AuraLog`** (**`AuraServer.configure(projectToken, userSecret)`**) snippets for separate files
 
 ### Scenario: `server-check` hits authenticated ingest WS
 

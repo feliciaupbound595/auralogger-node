@@ -70,7 +70,7 @@
 
 | File | Role |
 |------|------|
-| **`client-log.ts`** | **`AuraClient`**: **`configure({ projectToken })`**, **`proj_auth`**, global **`WebSocket`**, **`create_browser_logs`**, idle close. |
+| **`client-log.ts`** | **`AuraClient`**: **`configure(projectToken)`**, **`proj_auth`**, global **`WebSocket`**, **`create_browser_logs`**, idle close. |
 
 ---
 

@@ -91,6 +91,21 @@ export function tryParseResolvedStyles(): unknown[] | null {
   }
 }
 
+/**
+ * Styles for SDK console output: same precedence as `get-logs` — embedded
+ * `AURALOGGER_PROJECT_STYLES` / `NEXT_PUBLIC_*` / `VITE_*` wins, then values
+ * hydrated from `POST .../proj_auth`, then `[]` (defaults inside `printLog`).
+ */
+export function resolveStylesForConsolePrint(
+  runtimeFromProjAuth: unknown,
+): unknown {
+  const fromEnv = tryParseResolvedStyles();
+  if (fromEnv !== null) {
+    return fromEnv;
+  }
+  return runtimeFromProjAuth ?? [];
+}
+
 export function parseResolvedStylesOrThrow(): unknown[] {
   const raw = trimEnvAny(getResolvedStylesKey());
   if (!raw) {

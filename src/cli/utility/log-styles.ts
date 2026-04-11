@@ -36,12 +36,104 @@ export const DEFAULT_LOG_STYLE_SPEC: LogStyleSpec = {
   "text-color": [255, 255, 255],
 };
 
+const COLOR_KEYS: (keyof LogStyleSpec)[] = [
+  "type-color",
+  "background",
+  "borderColor",
+  "location-color",
+  "time-color",
+  "message-color",
+  "text-color",
+];
+
 function cloneDefaultSpec(): LogStyleSpec {
   return JSON.parse(JSON.stringify(DEFAULT_LOG_STYLE_SPEC)) as LogStyleSpec;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function clampByte(n: number): number {
+  if (Number.isNaN(n)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(255, Math.round(n)));
+}
+
+/**
+ * Parses a color value from API/proj_auth into [r,g,b] when possible:
+ * numeric triple, or #rgb / #rrggbb (case-insensitive).
+ */
+export function normalizeRgb(value: unknown): [number, number, number] | undefined {
+  if (Array.isArray(value) && value.length >= 3) {
+    const r = Number(value[0]);
+    const g = Number(value[1]);
+    const b = Number(value[2]);
+    if ([r, g, b].every((x) => Number.isFinite(x))) {
+      return [clampByte(r), clampByte(g), clampByte(b)];
+    }
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const s = value.trim();
+  const hex = s.startsWith("#") ? s.slice(1) : s;
+  if (!/^[0-9a-fA-F]{3}$/.test(hex) && !/^[0-9a-fA-F]{6}$/.test(hex)) {
+    return undefined;
+  }
+  const full =
+    hex.length === 3
+      ? hex
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : hex;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  if ([r, g, b].some((x) => Number.isNaN(x))) {
+    return undefined;
+  }
+  return [r, g, b];
+}
+
+/**
+ * If `proj_auth.styles` is a JSON string, parse it; otherwise return `raw`.
+ * On parse failure or nullish input, returns a value that yields default-only styles.
+ */
+export function unwrapProjAuthStyles(raw: unknown): unknown {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  if (typeof raw === "string") {
+    const t = raw.trim();
+    if (!t) {
+      return null;
+    }
+    try {
+      return JSON.parse(t) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  return raw;
+}
+
+function normalizeSpecColors(spec: LogStyleSpec, fallback: LogStyleSpec): LogStyleSpec {
+  const out = { ...spec };
+  for (const key of COLOR_KEYS) {
+    const normalized = normalizeRgb(out[key]);
+    if (normalized !== undefined) {
+      (out as Record<string, unknown>)[key] = normalized;
+    } else {
+      const fb =
+        normalizeRgb(fallback[key]) ?? DEFAULT_LOG_STYLE_SPEC[key];
+      (out as Record<string, unknown>)[key] = fb;
+    }
+  }
+  return out;
 }
 
 /**
@@ -82,7 +174,7 @@ export function buildStyleEntriesFromApi(
 }
 
 /** Map `proj_auth` per-type style objects (camelCase API fields) to row `styles` for {@link buildStyleEntriesFromApi}. */
-function mapProjAuthTypeStyle(spec: Record<string, unknown>): Record<string, unknown> {
+export function mapProjAuthTypeStyle(spec: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const pairs: [string, string][] = [
     ["typeColor", "type-color"],
@@ -109,23 +201,25 @@ function mapProjAuthTypeStyle(spec: Record<string, unknown>): Record<string, unk
 /**
  * Normalizes `styles` from `POST /api/{project_token}/proj_auth`:
  * - `null` / missing → default-only entries
+ * - string → JSON parse then same as object/array
  * - array → {@link buildStyleEntriesFromApi}
  * - object keyed by log type (each value: API shape with `typeColor`, …) → rows for {@link buildStyleEntriesFromApi}
  */
 export function buildStyleEntriesFromProjAuth(
   styles: unknown,
 ): Record<string, LogStyleSpec | Record<string, unknown>>[] {
-  if (styles === null || styles === undefined) {
+  const unwrapped = unwrapProjAuthStyles(styles);
+  if (unwrapped === null || unwrapped === undefined) {
     return buildStyleEntriesFromApi([]);
   }
-  if (Array.isArray(styles)) {
-    return buildStyleEntriesFromApi(styles);
+  if (Array.isArray(unwrapped)) {
+    return buildStyleEntriesFromApi(unwrapped);
   }
-  if (!isPlainObject(styles)) {
+  if (!isPlainObject(unwrapped)) {
     return buildStyleEntriesFromApi([]);
   }
   const rows: unknown[] = [];
-  for (const [type, spec] of Object.entries(styles)) {
+  for (const [type, spec] of Object.entries(unwrapped)) {
     const t = type.trim();
     if (!t || !isPlainObject(spec)) {
       continue;
@@ -167,18 +261,16 @@ export function styleMapFromConfigEntries(
 
 /**
  * Resolved spec for a log line: per-type fields merged over `default`, then default alone if unknown type.
+ * Color fields are normalized to RGB triples when the merged values are parseable.
  */
-export function resolveLogStyleSpec(
-  logType: string,
-  configStyles: unknown,
-): LogStyleSpec {
+export function resolveLogStyleSpec(logType: string, configStyles: unknown): LogStyleSpec {
   const map = styleMapFromConfigEntries(configStyles);
   const base = (map.default as LogStyleSpec | undefined) ?? cloneDefaultSpec();
   const t =
     typeof logType === "string" && logType.trim() ? logType.trim() : "unknown";
   const specific = map[t];
-  if (!specific) {
-    return { ...base };
-  }
-  return { ...base, ...specific } as LogStyleSpec;
+  const merged = !specific
+    ? { ...base }
+    : ({ ...base, ...specific } as LogStyleSpec);
+  return normalizeSpecColors(merged, base);
 }

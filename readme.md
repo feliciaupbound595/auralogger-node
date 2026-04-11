@@ -1,4 +1,5 @@
-<!-- Generated: 2026-04-09 00:00:00 UTC -->
+
+
 # Auralogger for Node.js (SDK + CLI)
 
 Stream logs from your **Node server** and your **browser app** to Auralogger, then query them from the terminal , while watching them popup on ur mobile/browser with Aura
@@ -13,7 +14,7 @@ Run CLI commands from the directory that contains your `.env` / `.env.local` (or
 
 **Prefer `npx`** so the CLI runs in **this project’s context** with the version you expect — Auralogger is **project-scoped** (tokens + publishable ids per app), not a “install once globally and forget which repo you’re in” kind of tool.
 
-**Migrating:** rename **`AURALOGGER_PROJECT_SECRET`** → **`AURALOGGER_PROJECT_TOKEN`** and add **`AURALOGGER_USER_SECRET`**. There is no backward-compatible read of the old env name.
+**Migrating:** rename `**AURALOGGER_PROJECT_SECRET`** → `**AURALOGGER_PROJECT_TOKEN**` and add `**AURALOGGER_USER_SECRET**`. There is no backward-compatible read of the old env name.
 
 ### 1) Add the package
 
@@ -43,7 +44,7 @@ After `**npm install auralogger-cli**` in this repo, `npx` can run the **local**
 npx auralogger init
 ```
 
-`**auralogger init**` opens with a short banner, prompts for any missing creds, then shows the **current session** from `proj_auth` and a **five-line-style copy-paste block** when values are new: `AURALOGGER_PROJECT_TOKEN`, `AURALOGGER_USER_SECRET`, `AURALOGGER_PROJECT_SESSION`, `NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`, and `VITE_AURALOGGER_PROJECT_TOKEN` (the last two match the server token). It does **not** print project id or styles into `.env` — those hydrate via `proj_auth`. Then two snippets in **different files**: `**Auralog`** and `**AuraLog**`. Variable details: `**[user-docs/environment.md](user-docs/environment.md)**`.
+`**auralogger init**` opens with a short banner, prompts for any missing creds, then shows the **current session** from `proj_auth` and a **five-line-style copy-paste block** when values are new: `AURALOGGER_PROJECT_TOKEN`, `AURALOGGER_USER_SECRET`, `AURALOGGER_PROJECT_SESSION`, `NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`, and `VITE_AURALOGGER_PROJECT_TOKEN` (the last two match the server token). It does **not** print project id or styles into `.env` — those hydrate via `proj_auth`. Then two snippets in **different files**: `**Auralog`** and `**AuraLog`**. Variable details: `**[user-docs/environment.md](user-docs/environment.md)**`.
 
 ### 3) Sanity-check connectivity
 
@@ -69,7 +70,7 @@ Run `**auralogger init**` and paste what it prints, or copy the shapes below. `*
 
 **Which file is which?**
 
-- **🎨 Browser / frontend** — React, Vue, Vite, Next client code, anything bundled for the user. If you want **pretty colored lines in DevTools**, you’re almost certainly here. **Project token only** in this file — never `AURALOGGER_USER_SECRET`.
+- **🎨 Browser / frontend** — React, Vue, Vite, Next client code, anything bundled for the user. `**AuraClient`** streams logs over the WebSocket to Auralogger; it does **not** print successful logs to the browser console (only **errors** / connection issues). **Project token only** in this file — never `AURALOGGER_USER_SECRET`.
 - **🧱 Server / backend / CLI** — HTTP APIs, workers, cron jobs, **this CLI**, anything that runs on a machine you control, not in the user’s browser. **Private creds live only in this copy** — *server suit only.*
 
 **Client-side `Auralog`** (`auralogger-cli/client`) — save as e.g. `src/lib/auralog/client-auralog.ts`. Set `**NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN**` in `.env.local`; `AuraClient` derives project id/session/styles via `POST /api/{project_token}/proj_auth` (token in the URL path).
@@ -96,7 +97,7 @@ function ensureConfigured(): void {
     throw new Error("Missing NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN");
   }
 
-  AuraClient.configure({ projectToken });
+  AuraClient.configure( projectToken );
   configured = true;
 }
 
@@ -179,15 +180,15 @@ AuraLog({
 npx auralogger-cli get-logs -maxcount 20
 ```
 
-After **`npm install`** in this project:
+After `**npm install**` in this project:
 
 ```bash
 npx auralogger get-logs -maxcount 20
 ```
 
-**One page per command:** each `get-logs` run sends **a single** `POST /api/{project_token}/logs` (header **`secret`** = user secret; some backends also require **`user_secret`**, and the CLI sends both) and prints whatever comes back in that response — there is **no** automatic multi-request paging inside the CLI. Use **`-maxcount`** (the CLI caps it at **100** per request) and **`-skip`** to move through results: run again with a higher `skip`, or wrap calls in a small script if you need many pages. Narrow filters (e.g. **`-time`**) keep each page meaningful.
+**One page per command:** each `get-logs` run sends **a single** `POST /api/{project_token}/logs` (header `**secret`** = user secret; some backends also require `**user_secret**`, and the CLI sends both) and prints whatever comes back in that response — there is **no** automatic multi-request paging inside the CLI. Use `**-maxcount`** (the CLI caps it at **100** per request) and `**-skip`** to move through results: run again with a higher `skip`, or wrap calls in a small script if you need many pages. Narrow filters (e.g. `**-time**`) keep each page meaningful.
 
-Full command list and filter syntax: **[`user-docs/commands.md`](user-docs/commands.md)**.
+Full command list and filter syntax: `**[user-docs/commands.md](user-docs/commands.md)**`.
 
 ---
 
@@ -198,9 +199,9 @@ Full command list and filter syntax: **[`user-docs/commands.md`](user-docs/comma
 - **Server code**: `import { AuraServer } from "auralogger-cli/server"`
 - **Browser code**: `import { AuraClient } from "auralogger-cli/client"`
 
-Using the explicit subpaths avoids accidentally pulling Node-only dependencies (like `ws`) into client bundles. The package `exports` field maps `**auralogger-cli/server`** to a stub on `**browser*`* builds.
+Using the explicit subpaths avoids accidentally pulling Node-only dependencies (like `ws`) into client bundles. The package `exports` field maps `**auralogger-cli/server`** to a stub on `**browser`** builds.
 
-**Fire-and-forget:** `AuraServer.log` / `AuraClient.log` (and the `**Auralog`** / `**AuraLog`** helpers) return immediately; work is scheduled on the next tick. Idle sockets close after a quiet period; call `AuraServer.closeSocket()` / `AuraClient.closeSocket()` for a clean shutdown. On Node you can call `AuraServer.configure(projectToken, userSecret)` or `await AuraServer.syncFromSecret(projectToken, userSecret)` yourself if you skip the helper.
+**Fire-and-forget:** `AuraServer.log` / `AuraClient.log` (and the `**Auralog`** / `**AuraLog`** helpers) return immediately; work is scheduled on the next tick. **Neither** mirrors successful logs to the local console — only problems (missing config, `proj_auth` / WebSocket / send failures) use `console.error` / `console.warn`. Idle sockets close after a quiet period; call `AuraServer.closeSocket()` / `AuraClient.closeSocket()` for a clean shutdown. On Node you can call `AuraServer.configure(projectToken, userSecret)` or `await AuraServer.syncFromSecret(projectToken, userSecret)` yourself if you skip the helper.
 
 ---
 
@@ -208,13 +209,13 @@ Using the explicit subpaths avoids accidentally pulling Node-only dependencies (
 
 *When the happy path ghosts you — start here. Facts first, feelings later.*
 
-### `AuraServer` prints but doesn’t stream
+### `AuraServer` doesn’t stream
 
 *Usually: the token or user secret never made it in, or `**proj_auth*`* didn’t get a word in.*
 
-- The process needs `**AURALOGGER_PROJECT_TOKEN`** and `**AURALOGGER_USER_SECRET**` (or explicit `AuraServer.configure(projectToken, userSecret)` / `syncFromSecret`). Id, session, and styles are loaded via **`POST /api/{project_token}/proj_auth`** after configure (token URL-encoded in the path; no `secret` header on that route).
+- The process needs `**AURALOGGER_PROJECT_TOKEN`** and `**AURALOGGER_USER_SECRET*`* (or explicit `AuraServer.configure(projectToken, userSecret)` / `syncFromSecret`). Id, session, and styles are loaded via `**POST /api/{project_token}/proj_auth**` after configure (token URL-encoded in the path; no `secret` header on that route).
 
-If private creds are missing or `proj_auth` fails, `AuraServer.log` falls back to console-only.
+If private creds are missing or `proj_auth` fails, `**AuraServer.log` does not stream** to the backend. You may see a **one-time** `console.error` about incomplete configuration, or `**console.error`** when a send or socket fails — not a per-log local print on success.
 
 ### Client bundle includes `ws` (or crashes on `process`, `fs`, etc.)
 
@@ -244,20 +245,20 @@ If you must run `AuraClient` in older Node, set `globalThis.WebSocket` (see `**u
 Two classes of values:
 
 - **Private / auth** — `**AURALOGGER_PROJECT_TOKEN`** and `**AURALOGGER_USER_SECRET`**.
-  - Project token is in the **path** for **`proj_auth`**, **`/{proj_token}/create_log`**, and **`/{proj_token}/create_browser_logs`**.
-  - User secret is **`Authorization: Bearer …`** on **server** **`/{proj_token}/create_log`** only (`**AuraServer**` / `**server-check**`).
+  - Project token is in the **path** for `**proj_auth`**, `**/{proj_token}/create_log**`, and `**/{proj_token}/create_browser_logs**`.
+  - User secret is `**Authorization: Bearer …**` on **server** `**/{proj_token}/create_log`** only (`**AuraServer**` / `**server-check**`).
   Never expose `**AURALOGGER_USER_SECRET`** in browser bundles, public repos, or `NEXT_PUBLIC_*` / `VITE_*` keys.
 - **Publishable** — `**project_id`**, `**session`**, and `**styles**` (the three non-secret fields from `auralogger init`). They are not API secrets. You still choose **where** they live: server-only `.env` vs client-visible env keys for frontends.
 
-The CLI and `**AuraServer`** need **both private creds** for server-side operations. `**AuraClient`** uses a **project token only** and hydrates id/session/styles via `proj_auth`; it never reads **`AURALOGGER_USER_SECRET`**.
+The CLI and `**AuraServer`** need **both private creds** for server-side operations. `**AuraClient`** uses a **project token only** and hydrates id/session/styles via `proj_auth`; it never reads `**AURALOGGER_USER_SECRET`**.
 
 #### Private variable (exact name)
 
 
-| Variable                    | Who uses it                                                                                                          | Notes                                                                                                                                      |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `AURALOGGER_PROJECT_TOKEN` | CLI (`init`, `get-logs`, checks), `**AuraServer`**, `**AuraClient**` input | Path segment for `proj_auth`, **`/api/{proj_token}/logs`** (`get-logs`), **`/{proj_token}/create_log`**, **`/{proj_token}/create_browser_logs`**. CLI also accepts the same value as **`NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`** or **`VITE_AURALOGGER_PROJECT_TOKEN`**. |
-| `AURALOGGER_USER_SECRET` | CLI (`init`, `get-logs`, checks), `**AuraServer**`, `**server-check**` | **Server-side / CI secrets only.** `Authorization: Bearer …` on **`/{proj_token}/create_log`**; **`get-logs`** sends it as header **`secret`** on **`POST /api/{project_token}/logs`**. Never exposed to `**AuraClient`**. |
+| Variable                   | Who uses it                                                                | Notes                                                                                                                                                                                                                                                                   |
+| -------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AURALOGGER_PROJECT_TOKEN` | CLI (`init`, `get-logs`, checks), `**AuraServer`**, `**AuraClient`** input | Path segment for `proj_auth`, `**/api/{proj_token}/logs**` (`get-logs`), `**/{proj_token}/create_log**`, `**/{proj_token}/create_browser_logs**`. CLI also accepts the same value as `**NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN**` or `**VITE_AURALOGGER_PROJECT_TOKEN**`. |
+| `AURALOGGER_USER_SECRET`   | CLI (`init`, `get-logs`, checks), `**AuraServer**`, `**server-check**`     | **Server-side / CI secrets only.** `Authorization: Bearer …` on `**/{proj_token}/create_log`**; `**get-logs**` sends it as header `**secret**` on `**POST /api/{project_token}/logs**`. Never exposed to `**AuraClient`**.                                              |
 
 
 #### Publishable variables (exact base names)
@@ -276,7 +277,7 @@ Resolution order for each publishable field is: `**NEXT_PUBLIC_*`**, then `**VIT
 
 #### Who loads what
 
-`**AuraClient` (browser):** project token only — usually `**NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN**` / `**VITE_...**` passed into **`AuraClient.configure`**. Id/session/styles come from **`proj_auth`** in memory. No `.env` file reads in the browser. The **publishable** id/session/styles env keys remain useful for **`init`** output, **`AuraServer`**, and CLI; they are **not** required on the client for **`AuraClient`**.
+`**AuraClient` (browser):** project token only — usually `**NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`** / `**VITE_...**` passed into `**AuraClient.configure**`. Id/session/styles come from `**proj_auth**` in memory. No `.env` file reads in the browser. The **publishable** id/session/styles env keys remain useful for `**init`** output, `**AuraServer**`, and CLI; they are **not** required on the client for `**AuraClient`**.
 
 `**AuraServer` (Node):** reads `**process.env`**; on first `AuraServer.log` or `syncFromSecret` it may once load `**.env`** and `**.env.local**` from `**process.cwd()**` (Node only). **Private creds** must only exist in environments you treat as private.
 
@@ -284,18 +285,18 @@ Resolution order for each publishable field is: `**NEXT_PUBLIC_*`**, then `**VIT
 
 #### Getting values
 
-*The boring-but-correct pipeline — same beats `**init*`* walks you through in the terminal.*
+*The boring-but-correct pipeline — same beats `**init`** walks you through in the terminal.*
 
 1. Run `**auralogger init`** — banner first, then prompts for whatever is missing.
-2. If the project token (`**AURALOGGER_PROJECT_TOKEN**` / `**NEXT_PUBLIC_**` / `**VITE_**`), `**AURALOGGER_USER_SECRET**`, or `**AURALOGGER_PROJECT_SESSION**` is unset, the CLI prompts or fetches as needed.
-3. After `proj_auth`, it shows the **live session**, the **up-to-five-line dotenv block** (token server + Next + Vite, user secret, session — each omitted if already in env), then two snippets (**separate files**): `**Auralog`** vs `**AuraLog**`.
-4. Put **private creds** in server-side env (`.env` gitignored, host secret store, CI secrets). For **`AuraClient`**, use **`NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`** or **`VITE_AURALOGGER_PROJECT_TOKEN`** (same ciphertext as the server token). Project id and DevTools styles need not live in `.env`; SDKs and `get-logs` can pull them from `proj_auth` when needed.
+2. If the project token (`**AURALOGGER_PROJECT_TOKEN*`* / `**NEXT_PUBLIC_**` / `**VITE_**`), `**AURALOGGER_USER_SECRET**`, or `**AURALOGGER_PROJECT_SESSION**` is unset, the CLI prompts or fetches as needed.
+3. After `proj_auth`, it shows the **live session**, the **up-to-five-line dotenv block** (token server + Next + Vite, user secret, session — each omitted if already in env), then two snippets (**separate files**): `**Auralog`** vs `**AuraLog`**.
+4. Put **private creds** in server-side env (`.env` gitignored, host secret store, CI secrets). For `**AuraClient`**, use `**NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN**` or `**VITE_AURALOGGER_PROJECT_TOKEN**` (same ciphertext as the server token). Project id and **styles** need not live in `.env`; SDKs and `**get-logs`** can pull them from `proj_auth` when needed (styles affect `**get-logs**` terminal output, not local SDK success logging).
 
 `**await AuraServer.syncFromSecret(projectToken, userSecret)**` (Node) can fill id, session, and styles **in memory** from the API without storing them in `.env`.
 
 #### Example layout (fake values)
 
-*Toy values — swap for what `**auralogger init*`* shows you. Real `**STYLES`** strings are long; don’t hand-craft them unless you enjoy pain.*
+*Toy values — swap for what `**auralogger init`** shows you. Real `**STYLES`** strings are long; don’t hand-craft them unless you enjoy pain.*
 
 **Typical `.env` fragment** (Next + Vite token lines are for bundlers; keep user secret off the client):
 
@@ -309,19 +310,19 @@ NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN="your-project-token"
 VITE_AURALOGGER_PROJECT_TOKEN="your-project-token"
 ```
 
-(`**auralogger init**` prints this shape when all values are new.) Optional: add **`NEXT_PUBLIC_` / `VITE_` / unprefixed** id + styles keys if you want static styling in the CLI without a `proj_auth` fetch on every `get-logs`.
+(`**auralogger init**` prints this shape when all values are new.) Optional: add `**NEXT_PUBLIC_` / `VITE_` / unprefixed** id + styles keys if you want static styling in the CLI without a `proj_auth` fetch on every `get-logs`.
 
 #### Commands vs runtime
 
 
-| Context                       | Private creds                                                                 | Publishable three                                                                                                                                                     |
-| ----------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `**auralogger init**`         | Optional in env, else prompt                                              | Banner → prompts → session line + up to five dotenv lines (token ×3 + secret + session) after `proj_auth`                                                               |
-| `**auralogger server-check**` | Token + user secret in env (or paste when prompted)                          | CLI fetches project id + session via `proj_auth` before opening the socket (session/styles not required in `.env`)                                                     |
-| `**auralogger client-check**` | Token + user secret in env (or paste when prompted)                          | Same `proj_auth` context as `**server-check**`; opens **`/{proj_token}/create_browser_logs`** (path-only); session in payload; **no** user secret on the socket        |
-| `**auralogger get-logs**`     | Token + user secret in env or at prompt                                       | `**STYLES**` optional in env: if unset, CLI fetches them via `**proj_auth**` for this run |
-| `**AuraServer**`              | Required (`configure` / env / `syncFromSecret`)                               | Loaded from `**proj_auth**` after token auth (publishable trio not required in `.env`)                                                                                |
-| `**AuraClient**`              | Browser: project token only; never user secret                                | Id/session/styles auto-hydrated via `proj_auth`                                                                                                                       |
+| Context                       | Private creds                                       | Publishable three                                                                                                                                               |
+| ----------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `**auralogger init`**         | Optional in env, else prompt                        | Banner → prompts → session line + up to five dotenv lines (token ×3 + secret + session) after `proj_auth`                                                       |
+| `**auralogger server-check**` | Token + user secret in env (or paste when prompted) | CLI fetches project id + session via `proj_auth` before opening the socket (session/styles not required in `.env`)                                              |
+| `**auralogger client-check**` | Token + user secret in env (or paste when prompted) | Same `proj_auth` context as `**server-check**`; opens `**/{proj_token}/create_browser_logs**` (path-only); session in payload; **no** user secret on the socket |
+| `**auralogger get-logs`**     | Token + user secret in env or at prompt             | `**STYLES**` optional in env: if unset, CLI fetches them via `**proj_auth**` for this run                                                                       |
+| `**AuraServer**`              | Required (`configure` / env / `syncFromSecret`)     | Loaded from `**proj_auth**` after token auth (publishable trio not required in `.env`)                                                                          |
+| `**AuraClient**`              | Browser: project token only; never user secret      | Id/session/styles auto-hydrated via `proj_auth`                                                                                                                 |
 
 
 #### Environment troubleshooting
@@ -329,8 +330,8 @@ VITE_AURALOGGER_PROJECT_TOKEN="your-project-token"
 *Quick triage — most “it worked on my machine” stories start with cwd or a mangled JSON string.*
 
 - `**server-check` / variable missing** — Run from the directory that contains your `.env`, or export vars in the shell (`process.cwd()`).
-- **Styles errors** — Value must be valid JSON array string; fix the env value or unset it so **`get-logs`** can pull styles from **`proj_auth`**.
-- `**AuraServer` console-only** — Ensure `**AURALOGGER_PROJECT_TOKEN`** and `**AURALOGGER_USER_SECRET`** (or call `**syncFromSecret` / `configure`**) so auth + ingest can run; `proj_auth` uses the token in the URL path.
+- **Styles errors** — Value must be valid JSON array string; fix the env value or unset it so `**get-logs*`* can pull styles from `**proj_auth**`.
+- `**AuraServer` not streaming** — Ensure `**AURALOGGER_PROJECT_TOKEN`** and `**AURALOGGER_USER_SECRET`** (or call `**syncFromSecret` / `configure`**) so auth + ingest can run; `proj_auth` uses the token in the URL path. Successful logs are not printed locally; misconfiguration may surface as `**console.error`**.
 - **Client bundle + `ws`** — Use `**auralogger-cli/client**`; the package maps `**./server**` to a browser stub so `ws` is not pulled in for `AuraServer` imports on the client.
 
 ##### Advanced overrides (contributors / self-hosted backends)
@@ -354,27 +355,27 @@ auralogger <command> [arguments...]
 #### Commands (no flags except filter tokens on `get-logs`)
 
 
-| Command          | Args           | Purpose                                                                                                                                                                                                                                                                                                                                                        |
-| ---------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init`           | —              | Banner, then prompts; `POST /api/{project_token}/proj_auth` (token in path); **copy-paste dotenv** up to five lines (`AURALOGGER_PROJECT_TOKEN`, `AURALOGGER_USER_SECRET`, `AURALOGGER_PROJECT_SESSION`, `NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`, `VITE_AURALOGGER_PROJECT_TOKEN` — omissions + notes if already in env); two snippets (`**Auralog**` + `**AuraLog**`). |
-| `server-check`   | —              | Test the **server** WebSocket pipe. Uses `AURALOGGER_PROJECT_TOKEN` + `AURALOGGER_USER_SECRET` (env or prompt), fetches project id + session via `proj_auth`, then opens `/{proj_token}/create_log` with `Authorization: Bearer ...` and sends one log.                                                                                                         |
-| `client-check`   | —              | Test the **client-style** pipe. Uses the same token/secret + `proj_auth` context as `**server-check**`, then opens `/{proj_token}/create_browser_logs` (no auth header on the socket, like `**AuraClient**`) and sends one log with the resolved session.                                                                                                       |
-| `test-serverlog` | —              | Send 5 logs via `AuraServer.log` (production path), then close.                                                                                                                                                                                                                                                                                                |
-| `test-clientlog` | —              | Send 5 logs via `AuraClient.log` (production path), then close.                                                                                                                                                                                                                                                                                                |
-| `get-logs`       | `[filters...]` | Fetch and print logs; filters use grammar below. If `**AURALOGGER_PROJECT_STYLES**` (or public equivalents) is missing, runs the same `**proj_auth**` fetch as `**init**` and styles logs from the response (prompts for token/user secret when needed).                                                                                                                  |
+| Command          | Args           | Purpose                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init`           | —              | Banner, then prompts; `POST /api/{project_token}/proj_auth` (token in path); **copy-paste dotenv** up to five lines (`AURALOGGER_PROJECT_TOKEN`, `AURALOGGER_USER_SECRET`, `AURALOGGER_PROJECT_SESSION`, `NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`, `VITE_AURALOGGER_PROJECT_TOKEN` — omissions + notes if already in env); two snippets (`**Auralog`** + `**AuraLog**`). |
+| `server-check`   | —              | Test the **server** WebSocket pipe. Uses `AURALOGGER_PROJECT_TOKEN` + `AURALOGGER_USER_SECRET` (env or prompt), fetches project id + session via `proj_auth`, then opens `/{proj_token}/create_log` with `Authorization: Bearer ...` and sends one log.                                                                                                                |
+| `client-check`   | —              | Test the **client-style** pipe. Uses the same token/secret + `proj_auth` context as `**server-check`**, then opens `/{proj_token}/create_browser_logs` (no auth header on the socket, like `**AuraClient**`) and sends one log with the resolved session.                                                                                                              |
+| `test-serverlog` | —              | Send 5 logs via `AuraServer.log` (production path), then close.                                                                                                                                                                                                                                                                                                        |
+| `test-clientlog` | —              | Send 5 logs via `AuraClient.log` (production path), then close.                                                                                                                                                                                                                                                                                                        |
+| `get-logs`       | `[filters...]` | Fetch and print logs; filters use grammar below. If `**AURALOGGER_PROJECT_STYLES**` (or public equivalents) is missing, runs the same `**proj_auth**` fetch as `**init**` and styles logs from the response (prompts for token/user secret when needed).                                                                                                               |
 
 
 #### `get-logs` filter grammar
 
-*Filters look like CLI flags but speak JSON — numbers for **`maxcount`** / **`skip`**, arrays almost everywhere else.*
+*Filters look like CLI flags but speak JSON — numbers for `**maxcount*`* / `**skip**`, arrays almost everywhere else.*
 
-**Paging model:** one CLI invocation → one HTTP request → one `logs` array. Pagination is **manual**: combine **`-maxcount`** (max **100** enforced in the CLI before the request) and **`-skip`** across separate runs (or a loop in a script). The server is expected to honor those filters when building the response.
+**Paging model:** one CLI invocation → one HTTP request → one `logs` array. Pagination is **manual**: combine `**-maxcount*`* (max **100** enforced in the CLI before the request) and `**-skip`** across separate runs (or a loop in a script). The server is expected to honor those filters when building the response.
 
 ```text
 -<field> [--<operator>] <json-value>
 ```
 
-- **`maxcount`**, **`skip`**: value is a JSON **number**.
+- `**maxcount**`, `**skip**`: value is a JSON **number**.
 - **All other fields**: value is a JSON **array**.
 
 ##### Fields

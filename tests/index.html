@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Auralogger Client Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 2rem;
+      }
+      button {
+        font-size: 1rem;
+        padding: 0.6rem 1rem;
+        cursor: pointer;
+      }
+      #status {
+        margin-top: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Auralogger SDK Runtime Test</h1>
+    <button id="client-log-btn" type="button">Send Client Log (browser / DevTools)</button>
+    <button id="server-log-btn" type="button">Send Server Log (GET /test, Node)</button>
+    <p id="status">Ready</p>
+
+    <script type="module">
+      /* Browser harness: ./client-page.mjs exports runClientTest. Do not import ./client.js (Node CJS / SDK bundle). */
+      import { runClientTest, runServerTest } from "./client-page.mjs";
+      const statusEl = document.getElementById("status");
+      const clientButton = document.getElementById("client-log-btn");
+      const serverButton = document.getElementById("server-log-btn");
+      if (
+        !(clientButton instanceof HTMLButtonElement) ||
+        !(serverButton instanceof HTMLButtonElement) ||
+        !statusEl
+      ) {
+        throw new Error("Missing required DOM nodes");
+      }
+      clientButton.addEventListener("click", async () => {
+        statusEl.textContent = "Sending client log...";
+        try {
+          const result = await runClientTest();
+          statusEl.textContent = `Client log sent: ${JSON.stringify(result)}`;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          statusEl.textContent = `Client failed: ${message}`;
+        }
+      });
+
+      serverButton.addEventListener("click", async () => {
+        statusEl.textContent = "Sending server log...";
+        try {
+          const result = await runServerTest();
+          statusEl.textContent = `Server log sent: ${JSON.stringify(result)}`;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          statusEl.textContent = `Server failed: ${message}`;
+        }
+      });
+    </script>
+  </body>
+</html>

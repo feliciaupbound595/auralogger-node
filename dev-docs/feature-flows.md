@@ -106,12 +106,12 @@ flowchart TD
   B --> C{have projectId + session + styles?}
   C -->|no| D[fetchProjAuthConfig single-flight]
   D --> C
-  C -->|yes| E[printLog local]
-  E --> F[ensureSocket → ws to create_log + Bearer user_secret]
+  C -->|yes| F[ensureSocket → ws to create_log + Bearer user_secret]
   F --> G[JSON.send payload]
 ```
 
 - **Configure:** `AuraServer.configure(projectToken, userSecret)` or env; see **`syncFromSecret`** / overrides in source.
+- **Console:** no local **`console.log`** on successful send; misconfiguration / network / WebSocket / send failures use **`console.error`** (see **`server-log.ts`**).
 
 ---
 
@@ -122,12 +122,12 @@ flowchart TD
 ```mermaid
 flowchart TD
   A[configure projectToken only] --> B[hydrate via proj_auth single-flight]
-  B --> C[printClientLog local]
-  C --> D[ensureSocket → create_browser_logs path only]
+  B --> D[ensureSocket → create_browser_logs path only]
   D --> E[send JSON payload]
 ```
 
 - **No** `AURALOGGER_USER_SECRET` anywhere in this graph.
+- **Console:** no local **`console.log`** on successful send; problems use **`console.error`** / **`console.warn`** (see **`client-log.ts`**).
 
 ---
 
