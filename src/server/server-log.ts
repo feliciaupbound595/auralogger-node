@@ -16,6 +16,8 @@ import {
 } from "../utils/env-config";
 
 const LOCAL_FALLBACK_SESSION = "auralogger-local-session";
+const SDK_RETRY_ATTEMPTS = 3;
+const SDK_RETRY_DELAY_MS = 500;
 
 interface LogPayload {
   type: string;
@@ -75,7 +77,25 @@ async function ensureHydratedRuntimeConfig(): Promise<void> {
       if (!token) {
         return;
       }
-      const payload = await fetchProjAuthConfig(token);
+      let payload: InitConfigPayload | null = null;
+      for (let attempt = 1; attempt <= SDK_RETRY_ATTEMPTS; attempt += 1) {
+        try {
+          payload = await fetchProjAuthConfig(token);
+          break;
+        } catch (error: unknown) {
+          if (attempt >= SDK_RETRY_ATTEMPTS) {
+            throw error;
+          }
+          const msg = error instanceof Error ? error.message : String(error);
+          console.warn(
+            `auralogger: proj_auth failed (${msg}); retrying (${attempt + 1}/${SDK_RETRY_ATTEMPTS})...`,
+          );
+          await new Promise((r) => setTimeout(r, SDK_RETRY_DELAY_MS));
+        }
+      }
+      if (!payload) {
+        return;
+      }
       const projectId = payload.project_id?.trim() ?? "";
       const session = payload.session?.trim() ?? "";
       if (!projectId || !session) {
@@ -317,21 +337,12 @@ async function processServerlogAsync(
   data?: unknown,
 ): Promise<void> {
   ensureNodeEnvLoadedOnce();
-  await ensureHydratedRuntimeConfig();
   ensureRuntimeMode();
-
-  const session = getSession();
-  if (!session) {
-    console.error(
-      "auralogger: missing session after token auth. Check your project token or proj_auth response.",
-    );
-    return;
-  }
 
   const payload: LogPayload = {
     type: normalizeType(type),
     message: String(message ?? ""),
-    session,
+    session: getOrCreateLocalSession(),
     created_at: createIsoTimestampWithMicroseconds(nowMs),
   };
   const normalizedLocation = normalizeLocation(location);
@@ -343,9 +354,19 @@ async function processServerlogAsync(
     payload.data = normalizedData;
   }
 
-  deferTask(() => {
+  try {
     printLog(payload, resolveStylesForConsolePrint(runtimeStyles));
-  });
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error(`auralogger: failed to print log: ${errMsg}`);
+  }
+
+  await ensureHydratedRuntimeConfig();
+  ensureRuntimeMode();
+  const session = getSession();
+  if (session) {
+    payload.session = session;
+  }
 
   const ws = ensureSocket();
   if (!ws) {
@@ -367,14 +388,53 @@ async function processServerlogAsync(
     console.error("auralogger: failed payload:", payload);
     return;
   }
+  const retrySendOnce = () => {
+    const retryWs = ensureSocket();
+    if (!retryWs) {
+      console.error("auralogger: websocket unavailable after retry; log payload:", payload);
+      return;
+    }
+    if (retryWs.readyState === WebSocket.OPEN) {
+      bumpSocketIdleTimer(retryWs);
+      retryWs.send(sendPayload, (retryError?: Error) => {
+        if (!retryError) {
+          return;
+        }
+        const sendErr = retryError?.message || String(retryError);
+        console.error(`auralogger: websocket send failed after retry: ${sendErr}`);
+        console.error("auralogger: failed payload:", payload);
+      });
+      return;
+    }
+    retryWs.once("open", () => {
+      bumpSocketIdleTimer(retryWs);
+      retryWs.send(sendPayload, (retryError?: Error) => {
+        if (!retryError) {
+          return;
+        }
+        const sendErr = retryError?.message || String(retryError);
+        console.error(`auralogger: websocket send failed after retry: ${sendErr}`);
+        console.error("auralogger: failed payload:", payload);
+      });
+    });
+  };
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(sendPayload, (error?: Error) => {
       if (!error) {
         return;
       }
       const sendErr = error?.message || String(error);
-      console.error(`auralogger: websocket send failed: ${sendErr}`);
-      console.error("auralogger: failed payload:", payload);
+      console.warn(`auralogger: websocket send failed (${sendErr}); retrying (2/2)...`);
+      if (socket && socket.readyState !== WebSocket.CLOSED) {
+        try {
+          socket.close();
+        } catch {
+          // ignore
+        }
+      }
+      socket = null;
+      socketUrl = null;
+      retrySendOnce();
     });
     return;
   }
@@ -387,14 +447,31 @@ async function processServerlogAsync(
           return;
         }
         const sendErr = error?.message || String(error);
-        console.error(`auralogger: websocket send failed: ${sendErr}`);
-        console.error("auralogger: failed payload:", payload);
+        console.warn(`auralogger: websocket send failed (${sendErr}); retrying (2/2)...`);
+        if (socket && socket.readyState !== WebSocket.CLOSED) {
+          try {
+            socket.close();
+          } catch {
+            // ignore
+          }
+        }
+        socket = null;
+        socketUrl = null;
+        retrySendOnce();
       });
     });
     ws.once("error", () => {
-      if (!consoleOnlyFallback) {
-        console.error("auralogger: websocket unavailable; log payload:", payload);
+      console.warn("auralogger: websocket unavailable while connecting; retrying (2/2)...");
+      if (socket && socket.readyState !== WebSocket.CLOSED) {
+        try {
+          socket.close();
+        } catch {
+          // ignore
+        }
       }
+      socket = null;
+      socketUrl = null;
+      retrySendOnce();
     });
     return;
   }

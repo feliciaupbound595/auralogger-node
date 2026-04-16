@@ -185,19 +185,13 @@ function buildAuraClientWrapperSnippet(): string {
   return [
     `import { AuraClient } from 'auralogger-cli/client'`,
     ``,
-    `export type AuralogParams = {`,
-    `  type: string`,
-    `  message: string`,
-    `  location?: string`,
-    `  data?: unknown`,
-    `}`,
     ``,
     `let configured = false`,
     ``,
     `function ensureConfigured(): void {`,
     `  if (configured) return`,
     ``,
-    `  // AuraClient only needs the project token; it hydrates via POST /api/{project_token}/proj_auth (token in path).`,
+    `  // AuraClient.configure() only needs the project token — never put the user secret in client bundles.`,
     `  // You can also use hardcoded strings instead of env lookups below (avoid committing real values).`,
     `  const projectToken = process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`,
     `  if (!projectToken) {`,
@@ -209,9 +203,9 @@ function buildAuraClientWrapperSnippet(): string {
     `}`,
     ``,
     `/** Browser-safe: project token only. Never include user secret in client bundles. */`,
-    `export function Auralog(params: AuralogParams): void {`,
+    `export function Auralog(type: string, message: string, location?: string, data?: unknown): void {`,
     `  ensureConfigured()`,
-    `  AuraClient.log(params.type, params.message, params.location, params.data)`,
+    `  AuraClient.log(type, message, location, data)`,
     `}`,
   ].join("\n");
 }
@@ -219,13 +213,6 @@ function buildAuraClientWrapperSnippet(): string {
 function buildAuraServerWrapperSnippet(): string {
   return [
     `import { AuraServer } from 'auralogger-cli/server'`,
-    ``,
-    `export type AuralogParams = {`,
-    `  type: string`,
-    `  message: string`,
-    `  location?: string`,
-    `  data?: unknown`,
-    `}`,
     ``,
     `let configured = false`,
     ``,
@@ -247,10 +234,40 @@ function buildAuraServerWrapperSnippet(): string {
     `}`,
     ``,
     `/** Server-only: uses project token + user secret from env. Do not import from client components. */`,
-    `export function AuraLog(params: AuralogParams): void {`,
+    `export function AuraLog(type: string, message: string, location?: string, data?: unknown): void {`,
     `  ensureConfigured()`,
-    `  AuraServer.log(params.type, params.message, params.location, params.data)`,
+    `  AuraServer.log(type, message, location, data)`,
     `}`,
+  ].join("\n");
+}
+
+function buildAuraClientUsageSnippet(): string {
+  return [
+    `import { Auralog } from '@/lib/auralog/client-auralog'`,
+    ``,
+    `Auralog('info', 'Client page mounted', 'src/app/test/page.tsx', { source: 'test-page-client' })`,
+    `// expected: [info] Client page mounted @ src/app/test/page.tsx { source: 'test-page-client' }`,
+    ``,
+    `Auralog('warn', 'Client cache miss')`,
+    `// expected: [warn] Client cache miss`,
+    ``,
+    `Auralog('error', 'Client fetch failed', undefined, { retrying: true })`,
+    `// expected: [error] Client fetch failed { retrying: true }`,
+  ].join("\n");
+}
+
+function buildAuraServerUsageSnippet(): string {
+  return [
+    `import { AuraLog } from '@/lib/auralog/server-auralog'`,
+    ``,
+    `AuraLog('info', 'Request completed', 'src/app/api/orders/route.ts', { order_id: 'ord_123', status: 201 })`,
+    `// expected: [info] Request completed @ src/app/api/orders/route.ts { order_id: 'ord_123', status: 201 }`,
+    ``,
+    `AuraLog('warn', 'Cache miss')`,
+    `// expected: [warn] Cache miss`,
+    ``,
+    `AuraLog('error', 'Payment gateway timeout', undefined, { provider: 'stripe' })`,
+    `// expected: [error] Payment gateway timeout { provider: 'stripe' }`,
   ].join("\n");
 }
 
@@ -295,6 +312,10 @@ function printInitHelperSnippetsWithCharacterVoices(): void {
     "Client-side Auralog — auralogger-cli/client",
     buildAuraClientWrapperSnippet(),
   );
+  printCodeStory(
+    "Using your generated Auralog helper (client example logs)",
+    buildAuraClientUsageSnippet(),
+  );
   {
     const a = pickAside(INIT_SNIPPET_DEADPOOL_ASIDES);
     printAside(a.emoji, a.line);
@@ -310,6 +331,10 @@ function printInitHelperSnippetsWithCharacterVoices(): void {
   printCodeStory(
     "Server-side AuraLog — auralogger-cli/server",
     buildAuraServerWrapperSnippet(),
+  );
+  printCodeStory(
+    "Using your generated AuraLog helper (server example logs)",
+    buildAuraServerUsageSnippet(),
   );
 }
 
@@ -357,7 +382,7 @@ function printCopyPasteEnvBlock(
   );
   console.log(
     chalk.dim(
-      "   Up to five lines when everything’s new: server token, user secret, session, then the same token for Next and Vite. Project id + DevTools styles come from proj_auth — no .env lines for those.",
+      "   Up to five lines when everything’s new: server token, user secret, session, then the same token for Next and Vite.",
     ),
   );
   console.log("");
@@ -466,7 +491,7 @@ function printPostInitSummary(
   console.log(
     chalk.gray("   The ") +
       chalk.bold.gray("client") +
-      chalk.gray(" Auralog uses project token only; proj_auth uses the token in the URL path."),
+      chalk.gray(" Auralog file reads only the publishable project token from env."),
   );
   console.log("");
 }
@@ -477,11 +502,6 @@ function printAlreadyConfiguredSuccess(): void {
     chalk.bold.hex("#ffa657")("🎉 ") +
       chalk.white("Plot twist — this shell already has token, user secret, and session."),
   );
-  console.log(
-    chalk.gray(
-      "   Drop-in helpers below — client reads the project token from your bundler; server uses token + user secret; id/styles can hydrate via proj_auth.",
-    ),
-  );
   {
     const a = pickAside(INIT_ALREADY_STRANGE_ASIDES);
     printAside(a.emoji, a.line);
@@ -489,21 +509,10 @@ function printAlreadyConfiguredSuccess(): void {
   console.log("");
   printTwoAuralogExplainer();
   printInitHelperSnippetsWithCharacterVoices();
-  console.log(
-    chalk.dim("   Need a fresh session from the API? Unset ") +
-      chalk.white(ENV_PROJECT_SESSION) +
-      chalk.dim(", then "),
-    chalk.hex("#79c0ff")("auralogger init"),
-    chalk.dim(" again."),
-  );
   {
     const a = pickAside(INIT_ALREADY_LOKI_ASIDES);
     printAside(a.emoji, a.line);
   }
-  console.log(
-    chalk.dim("   Victory lap for the server pipe: "),
-    chalk.hex("#79c0ff")("auralogger server-check"),
-  );
   {
     const a = pickAside(INIT_ALREADY_STEVE_ASIDES);
     printAside(a.emoji, a.line);

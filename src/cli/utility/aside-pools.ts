@@ -692,6 +692,21 @@ export const SERVER_CHECK_FAIL_WOLVERINE_ASIDES: readonly AsideEntry[] = [
   },
 ];
 
+export const CHECK_RETRY_ASIDES: readonly AsideEntry[] = [
+  {
+    emoji: "🦾",
+    line: "Tony: Transient failures happen. Retry before we start dramatic monologues.",
+  },
+  {
+    emoji: "💀",
+    line: "Deadpool: Retry arc unlocked. Same plan, less panic.",
+  },
+  {
+    emoji: "🐺",
+    line: "Wolverine: Breathe. Retry. Then decide what's broken.",
+  },
+];
+
 // --- client-check.ts ---
 
 export const CLIENT_CHECK_START_PETER_ASIDES: readonly AsideEntry[] = [

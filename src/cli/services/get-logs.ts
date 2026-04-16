@@ -3,15 +3,14 @@ import chalk from "chalk";
 import { buildProjectLogsUrl, resolveApiBaseUrl } from "../../utils/backend-origin";
 import {
   getResolvedProjectToken,
+  getResolvedSession,
   tryParseResolvedStyles,
 } from "../../utils/env-config";
 import {
   formatAsideTemplate,
-  GET_LOGS_DEADPOOL_SCROLL_ASIDES,
   GET_LOGS_EMPTY_ASIDES,
   GET_LOGS_OPEN_ASIDES,
   GET_LOGS_SKIPPED_SETUP_INTENT_ASIDES,
-  GET_LOGS_STYLES_ASIDES,
   GET_LOGS_SUCCESS_TEMPLATES,
   pickAside,
   ENV_RECOVERY_HINT_PLAIN,
@@ -24,7 +23,7 @@ import {
   resolveProjectTokenForInit,
   resolveUserSecretForInit,
 } from "./init";
-import { normalizeAndValidateFilters } from "./get-logs-filters";
+import { normalizeAndValidateFilters, withDefaultSessionFilter } from "./get-logs-filters";
 import { parseErrorBody } from "../../utils/http-utils";
 import { printLog } from "./log-print";
 import { parseCommand } from "../utility/parser";
@@ -130,7 +129,10 @@ export async function runGetLogsCore(
   let filters: unknown;
   try {
     const parsed = parseCommand(argv);
-    filters = normalizeAndValidateFilters(parsed.filters);
+    filters = withDefaultSessionFilter(
+      normalizeAndValidateFilters(parsed.filters),
+      getResolvedSession(),
+    );
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     throw new Error(`${msg}\n\n${formatGetLogsHelp()}`);
@@ -194,18 +196,6 @@ async function resolveGetLogsAuth(): Promise<{
 
   try {
     const payload = await fetchProjAuthConfig(projectToken);
-    console.log(
-      chalk.hex("#79c0ff")("🎨 ") +
-        chalk.white("No styles in your shell — using freshly fetched styling for this run."),
-    );
-    {
-      const a = pickAside(GET_LOGS_STYLES_ASIDES);
-      printAside(a.emoji, a.line);
-    }
-    if (Math.random() < 0.35) {
-      const d = pickAside(GET_LOGS_DEADPOOL_SCROLL_ASIDES);
-      printAside(d.emoji, d.line);
-    }
     return { projectToken, userSecret, styles: payload.styles };
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);

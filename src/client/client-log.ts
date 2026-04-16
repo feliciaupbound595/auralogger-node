@@ -44,6 +44,8 @@ interface ProjAuthResponse {
 const UNKNOWN_TYPE = "unknown";
 
 const LOCAL_FALLBACK_SESSION = "auralogger-local-session";
+const SDK_RETRY_ATTEMPTS = 3;
+const SDK_RETRY_DELAY_MS = 500;
 
 let overrideProjectToken: string | undefined;
 let runtimeProjectId: string | null = null;
@@ -210,7 +212,26 @@ async function ensureHydratedRuntimeConfig(): Promise<void> {
       if (!token) {
         return;
       }
-      const payload = await fetchProjAuthConfig(token);
+      let payload: { project_id: string | null; session: string | null; styles: unknown } | null =
+        null;
+      for (let attempt = 1; attempt <= SDK_RETRY_ATTEMPTS; attempt += 1) {
+        try {
+          payload = await fetchProjAuthConfig(token);
+          break;
+        } catch (error: unknown) {
+          if (attempt >= SDK_RETRY_ATTEMPTS) {
+            throw error;
+          }
+          const msg = toErrorMessage(error);
+          console.warn(
+            `auralogger: proj_auth failed (${msg}); retrying (${attempt + 1}/${SDK_RETRY_ATTEMPTS})...`,
+          );
+          await new Promise((r) => setTimeout(r, SDK_RETRY_DELAY_MS));
+        }
+      }
+      if (!payload) {
+        return;
+      }
       const projectId = payload.project_id?.trim() ?? "";
       const session = payload.session?.trim() ?? "";
       if (!projectId || !session) {
@@ -451,12 +472,11 @@ async function processClientlogAsync(
   data?: unknown,
 ): Promise<void> {
   const { CONNECTING, OPEN } = wsStates();
-  await ensureHydratedRuntimeConfig();
 
   const payload: LogPayload = {
     type: normalizeType(type),
     message: String(message ?? ""),
-    session: getSession(),
+    session: getOrCreateLocalSession(),
     created_at: createIsoTimestampWithMicroseconds(nowMs),
   };
   const normalizedLocation = normalizeLocation(location);
@@ -468,9 +488,15 @@ async function processClientlogAsync(
     payload.data = normalizedData;
   }
 
-  deferTask(() => {
+  try {
     printLog(payload, resolveStylesForConsolePrint(runtimeStyles));
-  });
+  } catch (error: unknown) {
+    const errMsg = toErrorMessage(error);
+    console.error(`auralogger: failed to print log: ${errMsg}`);
+  }
+
+  await ensureHydratedRuntimeConfig();
+  payload.session = getSession();
 
   try {
     const ws = await ensureSocket();
@@ -494,8 +520,29 @@ async function processClientlogAsync(
     if (ws.readyState === OPEN) {
       sendPayloadOverSocket(ws, sendPayload, (error: unknown) => {
         const sendErr = toErrorMessage(error);
-        console.error(`auralogger: websocket send failed: ${sendErr}`);
-        console.error("auralogger: failed payload:", payload);
+        console.warn(`auralogger: websocket send failed (${sendErr}); retrying (2/2)...`);
+        if (socket && socket.readyState !== wsStates().CLOSED) {
+          try {
+            socket.close();
+          } catch {
+            // ignore
+          }
+        }
+        socket = null;
+        socketUrl = null;
+        void ensureSocket().then((retrySocket) => {
+          if (!retrySocket) {
+            console.error("auralogger: websocket unavailable after retry; log payload:", payload);
+            return;
+          }
+          if (retrySocket.readyState === wsStates().OPEN) {
+            sendPayloadOverSocket(retrySocket, sendPayload, (retryError: unknown) => {
+              const retryErr = toErrorMessage(retryError);
+              console.error(`auralogger: websocket send failed after retry: ${retryErr}`);
+              console.error("auralogger: failed payload:", payload);
+            });
+          }
+        });
       });
       return;
     }
@@ -505,12 +552,55 @@ async function processClientlogAsync(
         bumpSocketIdleTimer(ws);
         sendPayloadOverSocket(ws, sendPayload, (error: unknown) => {
           const sendErr = toErrorMessage(error);
-          console.error(`auralogger: websocket send failed: ${sendErr}`);
-          console.error("auralogger: failed payload:", payload);
+          console.warn(`auralogger: websocket send failed (${sendErr}); retrying (2/2)...`);
+          if (socket && socket.readyState !== wsStates().CLOSED) {
+            try {
+              socket.close();
+            } catch {
+              // ignore
+            }
+          }
+          socket = null;
+          socketUrl = null;
+          void ensureSocket().then((retrySocket) => {
+            if (!retrySocket) {
+              console.error("auralogger: websocket unavailable after retry; log payload:", payload);
+              return;
+            }
+            if (retrySocket.readyState === wsStates().OPEN) {
+              sendPayloadOverSocket(retrySocket, sendPayload, (retryError: unknown) => {
+                const retryErr = toErrorMessage(retryError);
+                console.error(`auralogger: websocket send failed after retry: ${retryErr}`);
+                console.error("auralogger: failed payload:", payload);
+              });
+            }
+          });
         });
       });
       socketOnce(ws, "error", () => {
-        console.error("auralogger: websocket unavailable; log payload:", payload);
+        console.warn("auralogger: websocket unavailable while connecting; retrying (2/2)...");
+        if (socket && socket.readyState !== wsStates().CLOSED) {
+          try {
+            socket.close();
+          } catch {
+            // ignore
+          }
+        }
+        socket = null;
+        socketUrl = null;
+        void ensureSocket().then((retrySocket) => {
+          if (!retrySocket) {
+            console.error("auralogger: websocket unavailable after retry; log payload:", payload);
+            return;
+          }
+          if (retrySocket.readyState === wsStates().OPEN) {
+            sendPayloadOverSocket(retrySocket, sendPayload, (retryError: unknown) => {
+              const retryErr = toErrorMessage(retryError);
+              console.error(`auralogger: websocket send failed after retry: ${retryErr}`);
+              console.error("auralogger: failed payload:", payload);
+            });
+          }
+        });
       });
       return;
     }

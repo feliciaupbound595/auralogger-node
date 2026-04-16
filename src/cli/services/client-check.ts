@@ -3,6 +3,7 @@ import chalk from "chalk";
 
 import { resolveWsBaseUrl } from "../../utils/backend-origin";
 import {
+  CHECK_RETRY_ASIDES,
   CLIENT_CHECK_START_PETER_ASIDES,
   CLIENT_CHECK_SUCCESS_ASIDES,
   pickAside,
@@ -13,6 +14,8 @@ import { maybePrintGenericSpice, printAside } from "../utility/cli-tone";
 import { resolveProjectContextForCliChecks } from "./init";
 
 const CONNECT_TIMEOUT_MS = 5000;
+const MAX_RETRIES = 2;
+const RETRY_WAIT_MS = 700;
 
 function buildClientWsUrl(projectToken: string): string {
   return `${resolveWsBaseUrl()}/${encodeURIComponent(projectToken)}/create_browser_logs`;
@@ -49,7 +52,8 @@ export async function runClientCheck(): Promise<void> {
     const a = pickAside(CLIENT_CHECK_START_PETER_ASIDES);
     printAside(a.emoji, a.line);
   }
-  await new Promise<void>((resolve, reject) => {
+  const sendAttempt = async (): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
 
     const timeout = setTimeout(() => {
@@ -107,7 +111,29 @@ export async function runClientCheck(): Promise<void> {
         ),
       );
     });
-  });
+    });
+
+  for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt += 1) {
+    try {
+      await sendAttempt();
+      break;
+    } catch (error: unknown) {
+      if (attempt > MAX_RETRIES) {
+        throw error;
+      }
+      const retryCount = attempt;
+      console.log("");
+      const a = pickAside(CHECK_RETRY_ASIDES);
+      printAside(a.emoji, a.line);
+      console.log(
+        chalk.dim("🔁 ") +
+          chalk.white("Retrying ") +
+          chalk.bold.white("client-check") +
+          chalk.white(` (attempt ${retryCount + 1}/${MAX_RETRIES + 1})...`),
+      );
+      await new Promise((r) => setTimeout(r, RETRY_WAIT_MS));
+    }
+  }
 
   console.log("");
   const projectLabel = projectName || projectId;

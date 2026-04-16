@@ -13,7 +13,7 @@ function defaultOpForField(field: string): string {
   if (field.startsWith("data.")) {
     return "eq";
   }
-  if (field === "order" || field === "maxcount" || field === "skip") {
+  if (field === "order" || field === "maxcount" || field === "skip" || field === "session") {
     return "eq";
   }
   if (field === "message") {
@@ -47,6 +47,7 @@ function allowedOpsForField(field: string): string[] {
     case "order":
     case "maxcount":
     case "skip":
+    case "session":
       return ["eq"];
     default:
       return [];
@@ -83,4 +84,21 @@ export function normalizeAndValidateFilters(parsed: ParsedFilter[]): ApiLogFilte
 
     return apiFilter;
   });
+}
+
+/**
+ * When `AURALOGGER_PROJECT_SESSION` (or Next/Vite aliases) is set, prepends a
+ * `session` `eq` filter unless the user already passed `-session`.
+ */
+export function withDefaultSessionFilter(
+  filters: ApiLogFilter[],
+  sessionFromEnv: string | undefined,
+): ApiLogFilter[] {
+  if (!sessionFromEnv) {
+    return filters;
+  }
+  if (filters.some((f) => f.field === "session")) {
+    return filters;
+  }
+  return [{ field: "session", value: [sessionFromEnv] }, ...filters];
 }

@@ -23,7 +23,6 @@ export async function runTestServerlog(): Promise<void> {
       chalk.bold.white("server") +
       chalk.white(" logger — 5 peppy test logs incoming."),
   );
-  console.log(chalk.dim("   (Same path your real code uses — not a fake shortcut.)"));
   {
     const a = pickAside(TEST_SERVERLOG_START_BANNER_ASIDES);
     printAside(a.emoji, a.line);

@@ -36,7 +36,12 @@ function printLogPlain(log: PrintableLogRow): void {
   const type = typeof log.type === "string" ? log.type : String(log.type ?? "");
   const loc = String(log.location ?? "");
   const msg = String(log.message ?? "");
-  console.log(`${ts} ${type} ${loc}`.trim(), msg);
+  const data = log.data == null ? "" : String(log.data);
+  const lines = [`${ts}    ${loc}`.trim(), `🗒️ ${type} ${msg}`.trim()];
+  if (data.trim()) {
+    lines.push(data);
+  }
+  console.log(lines.join("\n"));
 }
 
 function rgbPaint(rgb: [number, number, number], text: unknown): string {
@@ -59,13 +64,29 @@ export function printLog(log: PrintableLogRow, configStyles: unknown): void {
       configStyles,
     );
     const loc = String(log.location ?? "");
-    console.log(
-      rgbPaint(spec["time-color"], formatCreatedAtTimeOnly(log.created_at)),
-      spec.icon,
-      rgbPaint(spec["type-color"], log.type),
+    const line1 = [
+      chalk.dim(rgbPaint(spec["time-color"], formatCreatedAtTimeOnly(log.created_at))),
       rgbPaint(spec["location-color"], loc),
-    );
-    console.log(rgbPaint(spec["message-color"], String(log.message ?? "")));
+    ].join("    ")
+      .trim();
+
+    const type = typeof log.type === "string" ? log.type : String(log.type ?? "");
+    const icon = String(spec.icon ?? "").trim();
+    const iconAndType = [icon, rgbPaint(spec["type-color"], type)]
+      .filter((s) => String(s).trim())
+      .join(" ");
+    const line2 = [
+      iconAndType,
+      rgbPaint(spec["message-color"], String(log.message ?? "")),
+    ]
+      .join(" ")
+      .trim();
+    const data = String(log.data ?? "");
+    const lines = [line1, line2];
+    if (data.trim()) {
+      lines.push(chalk.dim(rgbPaint(spec["text-color"], data)));
+    }
+    console.log(lines.join("\n"));
   } catch {
     printLogPlain(log);
   }
