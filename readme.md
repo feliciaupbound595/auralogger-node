@@ -40,8 +40,7 @@ After `npm install auralogger-cli`, you can invoke the same CLI via the shorter 
 npx auralogger init
 ```
 
-`**auralogger init**` opens with a short banner, prompts for any missing creds, then shows the **current session** from `proj_auth` and a **five-line-style copy-paste block** when values are new: `AURALOGGER_PROJECT_TOKEN`, `AURALOGGER_USER_SECRET`, `AURALOGGER_PROJECT_SESSION`, `NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`, and `VITE_AURALOGGER_PROJECT_TOKEN` (the last two match the server token). It does **not** print project id or styles into `.env` — those hydrate via `proj_auth`. Then two snippets in **different files**: `**Auralog`** and `**AuraLog`**. Variable details: `**[user-docs/environment.md](user-docs/environment.md)`**.
-
+`**auralogger init**` opens with a short banner, prompts for any missing creds, then shows the **current session** from `proj_auth` and a **five-line-style copy-paste block** when values are new: `AURALOGGER_PROJECT_TOKEN`, `AURALOGGER_USER_SECRET`, `AURALOGGER_PROJECT_SESSION`, `NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`, and `VITE_AURALOGGER_PROJECT_TOKEN` (the last two match the server token). It does **not** print project id or styles into `.env` — those hydrate via `proj_auth`. Then two snippets in **different files**: `**Auralog`** and `**AuraLog`**.
 ### 3) Sanity-check connectivity
 
 *Before you wire helpers everywhere: confirm the pipes actually connect. Less “mystery meat,” more “we tested this lane.”*
