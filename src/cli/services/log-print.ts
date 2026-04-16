@@ -37,7 +37,7 @@ function printLogPlain(log: PrintableLogRow): void {
   const loc = String(log.location ?? "");
   const msg = String(log.message ?? "");
   const data = log.data == null ? "" : String(log.data);
-  const lines = [`${ts} ${type} ${loc}`.trim(), `🗒️ ${msg}`.trim()];
+  const lines = [`${ts}    ${loc}`.trim(), `🗒️ ${type} ${msg}`.trim()];
   if (data.trim()) {
     lines.push(data);
   }
@@ -66,13 +66,17 @@ export function printLog(log: PrintableLogRow, configStyles: unknown): void {
     const loc = String(log.location ?? "");
     const line1 = [
       chalk.dim(rgbPaint(spec["time-color"], formatCreatedAtTimeOnly(log.created_at))),
-      chalk.dim(rgbPaint(spec["type-color"], log.type)),
       rgbPaint(spec["location-color"], loc),
-    ]
-      .join(" ")
+    ].join("    ")
       .trim();
+
+    const type = typeof log.type === "string" ? log.type : String(log.type ?? "");
+    const icon = String(spec.icon ?? "").trim();
+    const iconAndType = [icon, rgbPaint(spec["type-color"], type)]
+      .filter((s) => String(s).trim())
+      .join(" ");
     const line2 = [
-      String(spec.icon ?? "").trim(),
+      iconAndType,
       rgbPaint(spec["message-color"], String(log.message ?? "")),
     ]
       .join(" ")
