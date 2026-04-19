@@ -181,6 +181,19 @@ function isPlainAuthResponse(value: unknown): value is ProjAuthResponse {
   return value !== null && typeof value === "object";
 }
 
+/** Reminder: onlylocal avoids remote log traffic — especially relevant on deploys. */
+function printOnlylocalProductionDialog(): void {
+  const plainBody = [
+    "Deploying? Set onlylocal in configure for console-only logs.",
+    "No remote sends — no per-log network cost or delay.",
+  ];
+  console.log("");
+  for (const line of plainBody) {
+    console.log("  " + chalk.white(line));
+  }
+  console.log("");
+}
+
 function buildAuraClientWrapperSnippet(): string {
   return [
     `import { AuraClient } from 'auralogger-cli/client'`,
@@ -193,12 +206,15 @@ function buildAuraClientWrapperSnippet(): string {
     ``,
     `  // AuraClient.configure() only needs the project token — never put the user secret in client bundles.`,
     `  // You can also use hardcoded strings instead of env lookups below (avoid committing real values).`,
+    `  // onlylocal (optional 2nd arg): true => console-only; skips per-log remote work (prod log volume = more traffic).`,
+    `  // Set before production deploys when local output is enough — production generates far more log lines than dev.`,
     `  const projectToken = process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`,
     `  if (!projectToken) {`,
     `    throw new Error('Missing NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN')`,
     `  }`,
     ``,
-    `  AuraClient.configure(projectToken )`,
+    `  AuraClient.configure(projectToken)`,
+    `  // AuraClient.configure(projectToken, true)`,
     `  configured = true`,
     `}`,
     ``,
@@ -220,6 +236,8 @@ function buildAuraServerWrapperSnippet(): string {
     `  if (configured) return`,
     ``,
     `  // You can also pass string literals to AuraServer.configure(...) instead of process.env (never commit real secrets).`,
+    `  // onlylocal (optional 3rd arg): true => console-only; skips remote send path (prod = higher log traffic).`,
+    `  // Use before production when console-only is enough; omit or false when you need remote ingest.`,
     `  const projectToken = process.env.${ENV_PROJECT_TOKEN}`,
     `  if (!projectToken) {`,
     `    throw new Error('Missing ${ENV_PROJECT_TOKEN}')`,
@@ -230,6 +248,7 @@ function buildAuraServerWrapperSnippet(): string {
     `  }`,
     ``,
     `  AuraServer.configure(projectToken, userSecret)`,
+    `  // AuraServer.configure(projectToken, userSecret, true)`,
     `  configured = true`,
     `}`,
     ``,
@@ -338,31 +357,32 @@ function printInitHelperSnippetsWithCharacterVoices(): void {
   );
 }
 
+function styleInitCodeLine(line: string): string {
+  if (line.startsWith("import ")) {
+    return chalk.hex("#ff7b72")("import") + chalk.hex("#7ee787")(" " + line.slice(7));
+  }
+  if (line.startsWith("export type ")) {
+    return (
+      chalk.hex("#ff7b72")("export type") +
+      chalk.hex("#7ee787")(line.slice("export type".length))
+    );
+  }
+  if (line.startsWith("export function ")) {
+    return (
+      chalk.hex("#ff7b72")("export function") +
+      chalk.hex("#7ee787")(line.slice("export function".length))
+    );
+  }
+  return chalk.hex("#7ee787")(line);
+}
+
 function printCodeStory(title: string, snippet: string): void {
-  console.log(
-    chalk.bold.hex("#d2a8ff")("  📋 ") + chalk.bold.white(title),
-  );
+  const rawLines = snippet.split("\n");
+
+  console.log(chalk.bold.hex("#d2a8ff")("  📋 ") + chalk.bold.white(title));
   console.log("");
-  for (const line of snippet.split("\n")) {
-    if (line.startsWith("import ")) {
-      console.log(
-        "  " + chalk.hex("#ff7b72")("import") + chalk.hex("#7ee787")(" " + line.slice(7)),
-      );
-    } else if (line.startsWith("export type ")) {
-      console.log(
-        "  " +
-          chalk.hex("#ff7b72")("export type") +
-          chalk.hex("#7ee787")(line.slice("export type".length)),
-      );
-    } else if (line.startsWith("export function ")) {
-      console.log(
-        "  " +
-          chalk.hex("#ff7b72")("export function") +
-          chalk.hex("#7ee787")(line.slice("export function".length)),
-      );
-    } else {
-      console.log("  " + chalk.hex("#7ee787")(line));
-    }
+  for (const line of rawLines) {
+    console.log("  " + styleInitCodeLine(line));
   }
   console.log("");
 }
@@ -402,8 +422,10 @@ function printCopyPasteEnvBlock(
     lines.push(formatDotenvLine(ENV_VITE_PROJECT_TOKEN, payload.project_token));
   }
 
-  for (const line of lines) {
-    console.log(chalk.hex("#8b949e")(line));
+  if (lines.length > 0) {
+    for (const line of lines) {
+      console.log("  " + chalk.hex("#8b949e")(line));
+    }
   }
 
   if (projectTokenWasAlreadyInEnv) {
@@ -476,7 +498,7 @@ function printPostInitSummary(
     userSecret,
   );
 
-  console.log("");
+  printOnlylocalProductionDialog();
   printTwoAuralogExplainer();
   printInitHelperSnippetsWithCharacterVoices();
 
@@ -517,7 +539,7 @@ function printAlreadyConfiguredSuccess(): void {
     const a = pickAside(INIT_ALREADY_STEVE_ASIDES);
     printAside(a.emoji, a.line);
   }
-  console.log("");
+  printOnlylocalProductionDialog();
 }
 
 export async function runInit(): Promise<void> {

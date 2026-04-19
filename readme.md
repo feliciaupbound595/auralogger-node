@@ -63,6 +63,8 @@ npx auralogger client-check
 
 Run `**auralogger init**` and paste what it prints, or copy the shapes below. `**Auralog**` is for the browser; `**AuraLog**` is for Node — put each in **its own file** (or repo). *Same energy as the CLI banner: two helpers, two files — don’t cross the streams.*
 
+**`onlylocal` — less network overhead:** pass `**true**` as `**onlylocal**` in `**AuraServer.configure(projectToken, userSecret, onlylocal)**` or `**AuraClient.configure(projectToken, onlylocal)**` (or `{ onlylocal: true }` in the object form) when you want **console-only** logs: the SDK skips the per-log remote path (no `proj_auth` follow-up / WebSocket work for each line). **Production** usually generates **far more log lines** than a dev machine, so wire `**onlylocal: true**` before you push to production when local output is enough and you want to cap that traffic; use `**false**` or omit it when you need every line sent remotely.
+
 **Which file is which?**
 
 - **🎨 Browser / frontend** — React, Vue, Vite, Next client code, anything bundled for the user. `**AuraClient`** streams logs over the WebSocket to Auralogger; it does **not** print successful logs to the browser console (only **errors** / connection issues). **Project token only** in this file — never `AURALOGGER_USER_SECRET`.
@@ -87,12 +89,14 @@ function ensureConfigured(): void {
 
   // AuraClient only needs a project token; proj_auth uses POST /api/{token}/proj_auth (token in path).
   // You can also use hardcoded strings instead of env lookups below (avoid committing real values).
+  // onlylocal (optional 2nd arg): true => console-only; skips per-log remote work. Prod log volume >> dev.
   const projectToken = process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN;
   if (!projectToken) {
     throw new Error("Missing NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN");
   }
 
-  AuraClient.configure( projectToken );
+  AuraClient.configure(projectToken);
+  // AuraClient.configure(projectToken, true);
   configured = true;
 }
 
@@ -129,6 +133,7 @@ function ensureConfigured(): void {
   if (configured) return;
 
   // You can also pass string literals to AuraServer.configure(...) instead of process.env (never commit real secrets).
+  // onlylocal (optional 3rd arg): true => console-only; skips per-log remote send. Set for prod when local logs are enough.
   const projectToken = process.env.AURALOGGER_PROJECT_TOKEN;
   if (!projectToken) {
     throw new Error("Missing AURALOGGER_PROJECT_TOKEN");
@@ -139,6 +144,7 @@ function ensureConfigured(): void {
   }
 
   AuraServer.configure(projectToken, userSecret);
+  // AuraServer.configure(projectToken, userSecret, true);
   configured = true;
 }
 
