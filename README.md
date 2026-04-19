@@ -2,11 +2,9 @@
 
  a real-time logging and observability SDK and CLI for streaming, storing, searching, and filtering application logs—beautifully visualized and accessible anywhere in the world across terminal, web, and any screen.
 
-> **Same deal as the terminal output:** we dress up the prose; **commands, env names, and tables are the contract.** Copy those exactly. The jokes are optional.
-
 ---
 
-## Quick start (copy/paste) 
+## Quick start (copy/paste)
 
 Run CLI commands from the directory that contains your `.env` / `.env.local` (or where `AURALOGGER_PROJECT_*` is set in your shell/CI). The CLI loads `.env` files from the **current working directory** — *i.e. `cd` into the app before you heroically type `npx`.*
 
@@ -191,7 +189,7 @@ The same filter grammar is kept in sync in `**[user-docs/commands.md](user-docs/
 
 ## CLI commands (reference)
 
-*Subcommands, then `**get-logs*`* filters — copy tokens exactly.*
+*Subcommands, then `**get-logs`** filters — copy tokens exactly.*
 
 ### Invocation
 
@@ -272,7 +270,7 @@ Required env for CLI commands: see **Environment variables** earlier in this REA
 
 ## What to import (avoid bundler pain)
 
-*Pick the right door: `**/server`** vs `**/client**`. Wrong door = surprise `ws` in the browser bundle and a very angry webpack.*
+*Pick the right door: `**/server*`* vs `**/client`**. Wrong door = surprise `ws` in the browser bundle and a very angry webpack.*
 
 - **Server code**: `import { AuraServer } from "auralogger-cli/server"`
 - **Browser code**: `import { AuraClient } from "auralogger-cli/client"`
@@ -336,7 +334,7 @@ The CLI and `**AuraServer`** need **both private creds** for server-side operati
 | Variable                   | Who uses it                                                                | Notes                                                                                                                                                                                                                                                                              |
 | -------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AURALOGGER_PROJECT_TOKEN` | CLI (`init`, `get-logs`, checks), `**AuraServer`**, `**AuraClient`** input | **Project-scoped token**. The CLI and server SDK use it for auth + project lookup. Client SDK also uses a token (often via `NEXT_PUBLIC_*` / `VITE_*` keys). The CLI accepts the same value via `**NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`** or `**VITE_AURALOGGER_PROJECT_TOKEN`**. |
-| `AURALOGGER_USER_SECRET`   | CLI (`init`, `get-logs`, checks), `**AuraServer**`, `**server-check**`     | **Server-side / CI secrets only.** Required for server-side logging and for fetching logs in the CLI. **Never** expose this value to browser code, public repos, or `NEXT_PUBLIC_*` / `VITE_*` env keys.                                                                           |
+| `AURALOGGER_USER_SECRET`   | CLI (`init`, `get-logs`, checks), `**AuraServer`**, `**server-check**`     | **Server-side / CI secrets only.** Required for server-side logging and for fetching logs in the CLI. **Never** expose this value to browser code, public repos, or `NEXT_PUBLIC_*` / `VITE_*` env keys.                                                                           |
 
 
 #### Publishable variables (exact base names)
@@ -355,7 +353,7 @@ Resolution order for each publishable field is: `**NEXT_PUBLIC_*`**, then `**VIT
 
 #### Who loads what
 
-`**AuraClient` (browser):** project token only — usually `**NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`** / `**VITE_...`** passed into `**AuraClient.configure`**. Id/session/styles come from `**proj_auth**` in memory. No `.env` file reads in the browser. The **publishable** id/session/styles env keys remain useful for `**init`** output, `**AuraServer`**, and CLI; they are not required on the client for `**AuraClient`**.
+`**AuraClient` (browser):** project token only — usually `**NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`** / `**VITE_...`** passed into `**AuraClient.configure`**. Id/session/styles come from `**proj_auth`** in memory. No `.env` file reads in the browser. The publishable id/session/styles env keys remain useful for `**init**` output, `**AuraServer`**, and CLI; they are not required on the client for `**AuraClient`**.
 
 `**AuraServer` (Node):** reads `**process.env`**; on first `AuraServer.log` or `syncFromSecret` it may once load `**.env`** and `**.env.local**` from `**process.cwd()**` (Node only). **Private creds** must only exist in environments you treat as private.
 
@@ -363,10 +361,10 @@ Resolution order for each publishable field is: `**NEXT_PUBLIC_*`**, then `**VIT
 
 #### Getting values
 
-*The boring-but-correct pipeline — same beats `**init`** walks you through in the terminal.*
+*The boring-but-correct pipeline — same beats `**init*`* walks you through in the terminal.*
 
 1. Run `**auralogger init`** — banner first, then prompts for whatever is missing.
-2. If the project token (`**AURALOGGER_PROJECT_TOKEN`** / `**NEXT_PUBLIC_`** / `**VITE_*`*), `**AURALOGGER_USER_SECRET**`, or `**AURALOGGER_PROJECT_SESSION**` is unset, the CLI prompts or fetches as needed.
+2. If the project token (`**AURALOGGER_PROJECT_TOKEN`** / `**NEXT_PUBLIC_`** / `**VITE_*`*), `**AURALOGGER_USER_SECRET`**, or `**AURALOGGER_PROJECT_SESSION**` is unset, the CLI prompts or fetches as needed.
 3. After `proj_auth`, it shows the **live session**, the **up-to-five-line dotenv block** (token server + Next + Vite, user secret, session — each omitted if already in env), then two snippets (**separate files**): `**Auralog`** vs `**AuraLog`**.
 4. Put **private creds** in server-side env (`.env` gitignored, host secret store, CI secrets). For `**AuraClient`**, use `**NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN`** or `**VITE_AURALOGGER_PROJECT_TOKEN**` (same ciphertext as the server token). Project id and styles need not live in `.env`; SDKs and `**get-logs**` can pull them from `proj_auth` when needed (styles affect `**get-logs**` terminal output, not local SDK success logging).
 
@@ -397,9 +395,9 @@ VITE_AURALOGGER_PROJECT_TOKEN="your-project-token"
 | ----------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `**auralogger init`**         | Optional in env, else prompt                        | Banner → prompts → session line + up to five dotenv lines (token ×3 + secret + session) after `proj_auth`                                                       |
 | `**auralogger server-check`** | Token + user secret in env (or paste when prompted) | CLI fetches project id + session via `proj_auth` before opening the socket (session/styles not required in `.env`)                                              |
-| `**auralogger client-check`** | Token + user secret in env (or paste when prompted) | Same `proj_auth` context as `**server-check**`; opens `**/{proj_token}/create_browser_logs**` (path-only); session in payload; **no** user secret on the socket |
+| `**auralogger client-check`** | Token + user secret in env (or paste when prompted) | Same `proj_auth` context as `**server-check`**; opens `**/{proj_token}/create_browser_logs**` (path-only); session in payload; **no** user secret on the socket |
 | `**auralogger get-logs`**     | Token + user secret in env or at prompt             | `**STYLES`** optional in env: if unset, CLI fetches them via `**proj_auth`** for this run                                                                       |
-| `**AuraServer**`              | Required (`configure` / env / `syncFromSecret`)     | Loaded from `**proj_auth**` after token auth (publishable trio not required in `.env`)                                                                          |
+| `**AuraServer`**              | Required (`configure` / env / `syncFromSecret`)     | Loaded from `**proj_auth**` after token auth (publishable trio not required in `.env`)                                                                          |
 | `**AuraClient**`              | Browser: project token only; never user secret      | Id/session/styles auto-hydrated via `proj_auth`                                                                                                                 |
 
 
@@ -409,8 +407,8 @@ VITE_AURALOGGER_PROJECT_TOKEN="your-project-token"
 
 - `**server-check` / variable missing** — Run from the directory that contains your `.env`, or export vars in the shell (`process.cwd()`).
 - **Styles errors** — Value must be valid JSON array string; fix the env value or unset it so `**get-logs`** can pull styles from `**proj_auth`**.
-- `**AuraServer` not streaming** — Ensure `**AURALOGGER_PROJECT_TOKEN`** and `**AURALOGGER_USER_SECRET`** (or call `**syncFromSecret` / `configure`**) so auth + ingest can run; `proj_auth` uses the token in the URL path. Logs always print locally — if they're not reaching the dashboard, check credentials and `proj_auth` reachability; problems surface as `**console.error*`*.
-- **Client bundle + `ws`** — Use `**auralogger-cli/client**`; the package maps `**./server**` to a browser stub so `ws` is not pulled in for `AuraServer` imports on the client.
+- `**AuraServer` not streaming** — Ensure `**AURALOGGER_PROJECT_TOKEN`** and `**AURALOGGER_USER_SECRET`** (or call `**syncFromSecret` / `configure`**) so auth + ingest can run; `proj_auth` uses the token in the URL path. Logs always print locally — if they're not reaching the dashboard, check credentials and `proj_auth` reachability; problems surface as `**console.error`**.
+- **Client bundle + `ws*`* — Use `**auralogger-cli/client**`; the package maps `**./server**` to a browser stub so `ws` is not pulled in for `AuraServer` imports on the client.
 
 ##### Advanced overrides (contributors / self-hosted backends)
 
