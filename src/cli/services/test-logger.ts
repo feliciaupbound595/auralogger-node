@@ -29,11 +29,15 @@ export async function runTestServerlog(): Promise<void> {
   }
   console.log("");
 
-  for (let i = 1; i <= 5; i++) {
-    AuraServer.log("info", `test-serverlog log ${i}/5`, "cli/test-serverlog", {
-      i,
-      kind: "test-serverlog",
-    });
+  const serverLogs: Array<Parameters<typeof AuraServer.log>> = [
+    ["info",  "server test suite started",               "cli/test-serverlog", { env: "test", source: "auralogger-cli" }],
+    ["debug", "request payload parsed successfully",      "cli/test-serverlog", { userId: "usr_42", action: "login", durationMs: 12 }],
+    ["warn",  "rate limit threshold approaching",         "cli/test-serverlog", { currentRate: 480, limit: 500, unit: "req/min" }],
+    ["error", "failed to connect to upstream service",    "cli/test-serverlog", { service: "auth-api", statusCode: 503, retries: 3 }],
+    ["info",  "server test suite finished",               "cli/test-serverlog", { logsEmitted: 5 }],
+  ];
+  for (const args of serverLogs) {
+    AuraServer.log(...args);
     await sleep(150);
   }
 
@@ -72,11 +76,15 @@ export async function runTestClientlog(): Promise<void> {
   }
   console.log("");
 
-  for (let i = 1; i <= 5; i++) {
-    AuraClient.log("info", `test-clientlog log ${i}/5`, "cli/test-clientlog", {
-      i,
-      kind: "test-clientlog",
-    });
+  const clientLogs: Array<Parameters<typeof AuraClient.log>> = [
+    ["info",  "client test suite started",                    "cli/test-clientlog", { source: "auralogger-cli", env: "test" }],
+    ["warn",  "localStorage quota nearing limit",             "cli/test-clientlog", { usedKB: 4800, limitKB: 5120 }],
+    ["error", "unhandled promise rejection in fetch",         "cli/test-clientlog", { url: "/api/data", reason: "NetworkError: Failed to fetch" }],
+    ["debug", "component render cycle complete",              "cli/test-clientlog", { component: "Dashboard", renderMs: 34, props: { userId: "usr_7" } }],
+    ["info",  "client test suite finished",                   "cli/test-clientlog", { logsEmitted: 5 }],
+  ];
+  for (const args of clientLogs) {
+    AuraClient.log(...args);
     await sleep(150);
   }
 

@@ -4,6 +4,7 @@ import { buildProjectLogsUrl, resolveApiBaseUrl } from "../../utils/backend-orig
 import {
   getResolvedProjectToken,
   getResolvedSession,
+  getResolvedUserSecret,
   tryParseResolvedStyles,
 } from "../../utils/env-config";
 import {
@@ -57,13 +58,14 @@ async function fetchLogsWithFallback(
   const route = buildProjectLogsUrl(baseUrl, projectToken);
 
   const requestBody = JSON.stringify({ filters });
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (userSecret) {
+    headers["secret"] = userSecret;
+    headers["user_secret"] = userSecret;
+  }
   const requestInit: RequestInit = {
     method: "POST",
-    headers: {
-      secret: userSecret,
-      user_secret: userSecret,
-      "content-type": "application/json",
-    },
+    headers,
     body: requestBody,
   };
 
@@ -188,32 +190,40 @@ async function resolveGetLogsAuth(): Promise<{
 }> {
   loadCliEnvFiles();
   const projectToken = await resolveProjectTokenForInit();
-  const userSecret = await resolveUserSecretForInit();
   const stylesFromEnv = tryParseResolvedStyles();
-  if (stylesFromEnv !== null) {
-    return { projectToken, userSecret, styles: stylesFromEnv };
+  const userSecretFromEnv = getResolvedUserSecret();
+  if (userSecretFromEnv) {
+    // If we already have a user secret locally, assume the encrypted path and skip proj_auth.
+    // Only hit the network when we need to determine whether encryption is disabled.
+    return { projectToken, userSecret: userSecretFromEnv, styles: stylesFromEnv ?? undefined };
   }
 
+  console.log(chalk.dim("🔐 ") + chalk.white("Authenticating with Auralogger…"));
+
+  let payload;
   try {
-    const payload = await fetchProjAuthConfig(projectToken);
-    return { projectToken, userSecret, styles: payload.styles };
+    payload = await fetchProjAuthConfig(projectToken);
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
+    // Fall through with no styles — still need to prompt for secret if we can’t determine encrypted
     console.log(
       chalk.yellow("⚠️ ") +
         chalk.white(
-          `Couldn’t load styles from the API (${msg}). Using default terminal colors for log lines.`,
+          `Couldn’t reach Auralogger for auth (${msg}). Using env config if available.`,
         ),
     );
-    console.log(
-      chalk.dim("   Set ") +
-        chalk.cyan("AURALOGGER_PROJECT_STYLES") +
-        chalk.dim(" (or NEXT_PUBLIC_/VITE_…) from ") +
-        chalk.cyan("auralogger init") +
-        chalk.dim(" to match the dashboard, or fix API/network access."),
-    );
-    return { projectToken, userSecret, styles: undefined };
+    const userSecret = await resolveUserSecretForInit();
+    return { projectToken, userSecret, styles: stylesFromEnv ?? undefined };
   }
+
+  const encrypted = payload.encrypted;
+
+  let userSecret = "";
+  if (encrypted) {
+    userSecret = await resolveUserSecretForInit();
+  }
+
+  return { projectToken, userSecret, styles: stylesFromEnv ?? payload.styles };
 }
 
 export async function runGetLogs(argv: string[]): Promise<void> {
@@ -231,6 +241,7 @@ export async function runGetLogs(argv: string[]): Promise<void> {
     printAsideMaybe(a.emoji, a.line, 0.12);
   }
   const { projectToken, userSecret, styles } = await resolveGetLogsAuth();
+  console.log(chalk.dim("📦 ") + chalk.white("Fetching logs…"));
   await runGetLogsCore(projectToken, userSecret, styles, argv);
   maybePrintGenericSpice();
 }

@@ -38,9 +38,30 @@ function AuraLog(params) {
 function runServerTest() {
   AuraLog({
     type: "info",
-    message: "new server tests",
+    message: "server test suite started",
     location: "node/tests/local-server.js:/test",
-    data: { source: "test-api-route" },
+    data: { source: "test-api-route", env: "test" },
+  });
+
+  AuraLog({
+    type: "warn",
+    message: "rate limit threshold approaching",
+    location: "node/tests/local-server.js:/test",
+    data: { currentRate: 480, limit: 500, unit: "req/min" },
+  });
+
+  AuraLog({
+    type: "error",
+    message: "failed to connect to upstream service",
+    location: "node/tests/local-server.js:/test",
+    data: { service: "auth-api", statusCode: 503, retries: 3 },
+  });
+
+  AuraLog({
+    type: "debug",
+    message: "request payload parsed successfully",
+    location: "node/tests/local-server.js:/test",
+    data: { userId: "usr_42", action: "login", durationMs: 12 },
   });
 }
 

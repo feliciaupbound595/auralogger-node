@@ -44,6 +44,9 @@ interface ProjAuthResponse {
   project_name?: string | null;
   session?: string | null;
   styles?: unknown;
+  encrypted?: boolean | null;
+  // Back-compat: some deployments/store layers misspelled this as `encryption`.
+  encryption?: boolean | null;
 }
 
 function printMissingCredentialHint(envKey: string): void {
@@ -108,18 +111,24 @@ export async function resolveUserSecretForInit(): Promise<string> {
 
 export interface InitConfigPayload extends ProjAuthConfigPayload {
   project_token: string;
+  encrypted: boolean;
 }
 
 function buildConfigPayload(
   authResponse: ProjAuthResponse,
   projectToken: string,
 ): InitConfigPayload {
+  const encrypted =
+    authResponse.encrypted ??
+    authResponse.encryption ??
+    true;
   return {
     project_token: projectToken,
     project_id: authResponse.project_id ?? null,
     project_name: authResponse.project_name ?? null,
     session: authResponse.session ?? null,
     styles: buildStyleEntriesFromProjAuth(authResponse.styles),
+    encrypted,
   };
 }
 
@@ -272,6 +281,50 @@ function buildAuraServerUsageSnippet(): string {
   ].join("\n");
 }
 
+function buildAuraLoggerWrapperSnippet(): string {
+  return [
+    `import { auralogger } from 'auralogger-cli'`,
+    ``,
+    ``,
+    `let configured = false`,
+    ``,
+    `function ensureConfigured(): void {`,
+    `  if (configured) return`,
+    ``,
+    `  // auralogger.configure() only needs the project token — no user secret required.`,
+    `  // You can also use hardcoded strings instead of env lookups below (avoid committing real values).`,
+    `  const projectToken = process.env.${ENV_PROJECT_TOKEN}`,
+    `  if (!projectToken) {`,
+    `    throw new Error('Missing ${ENV_PROJECT_TOKEN}')`,
+    `  }`,
+    ``,
+    `  auralogger.configure(projectToken)`,
+    `  configured = true`,
+    `}`,
+    ``,
+    `/** Centralized logger — works anywhere, no client/server split needed. */`,
+    `export function AuraLog(type: string, message: string, location?: string, data?: unknown): void {`,
+    `  ensureConfigured()`,
+    `  auralogger.log(type, message, location, data)`,
+    `}`,
+  ].join("\n");
+}
+
+function buildAuraLoggerUsageSnippet(): string {
+  return [
+    `import { AuraLog } from '@/lib/auralog/auralog'`,
+    ``,
+    `AuraLog('info', 'Request completed', 'src/app/api/orders/route.ts', { order_id: 'ord_123', status: 201 })`,
+    `// expected: [info] Request completed @ src/app/api/orders/route.ts { order_id: 'ord_123', status: 201 }`,
+    ``,
+    `AuraLog('warn', 'Cache miss')`,
+    `// expected: [warn] Cache miss`,
+    ``,
+    `AuraLog('error', 'Payment gateway timeout', undefined, { provider: 'stripe' })`,
+    `// expected: [error] Payment gateway timeout { provider: 'stripe' }`,
+  ].join("\n");
+}
+
 function printTwoAuralogExplainer(): void {
   console.log("");
   console.log(
@@ -339,6 +392,45 @@ function printInitHelperSnippetsWithCharacterVoices(): void {
   );
 }
 
+function printSingleAuralogExplainer(): void {
+  console.log("");
+  console.log(
+    chalk.bold.hex("#d2a8ff")("  🧭 ") +
+      chalk.white("No encryption — ") +
+      chalk.bold.white("one centralized logger") +
+      chalk.white(" for everywhere. Import ") +
+      chalk.bold.white("auralogger") +
+      chalk.white(" directly from ") +
+      chalk.bold.white("auralogger-cli") 
+  );
+  console.log(
+    chalk.gray("     ") +
+      chalk.hex("#ffa657")("⚡ ") +
+      chalk.gray("Works in browser, server, scripts, APIs — same import everywhere. ") +
+      chalk.dim("Project token only — no user secret."),
+  );
+  console.log("");
+}
+
+function printInitHelperSnippetsNoEncryption(): void {
+  {
+    const a = pickAside(INIT_SNIPPET_PETER_ASIDES);
+    printAside(a.emoji, a.line);
+  }
+  printCodeStory(
+    "Centralized AuraLog — import auralogger from 'auralogger-cli'",
+    buildAuraLoggerWrapperSnippet(),
+  );
+  printCodeStory(
+    "Using your generated AuraLog helper (example logs)",
+    buildAuraLoggerUsageSnippet(),
+  );
+  {
+    const a = pickAside(INIT_SNIPPET_DEADPOOL_ASIDES);
+    printAside(a.emoji, a.line);
+  }
+}
+
 function styleInitCodeLine(line: string): string {
   if (line.startsWith("import ")) {
     return chalk.hex("#ff7b72")("import") + chalk.hex("#7ee787")(" " + line.slice(7));
@@ -377,23 +469,32 @@ function printCopyPasteEnvBlock(
   userSecret: string,
 ): void {
   const session = payload.session?.trim() ?? "";
+  const encrypted = payload.encrypted;
 
   console.log("");
   console.log(
     chalk.bold.hex("#79c0ff")("📋 ") + chalk.bold.white("Copy-paste env block"),
   );
-  console.log(
-    chalk.dim(
-      "   Up to five lines when everything’s new: server token, user secret, session, then the same token for Next and Vite.",
-    ),
-  );
+  if (encrypted) {
+    console.log(
+      chalk.dim(
+        "   Up to five lines when everything’s new: server token, user secret, session, then the same token for Next and Vite.",
+      ),
+    );
+  } else {
+    console.log(
+      chalk.dim(
+        "   No encryption — just your project token and session needed.",
+      ),
+    );
+  }
   console.log("");
 
   const lines: string[] = [];
   if (!projectTokenWasAlreadyInEnv) {
     lines.push(formatDotenvLine(ENV_PROJECT_TOKEN, payload.project_token));
   }
-  if (!userSecretWasAlreadyInEnv) {
+  if (encrypted && !userSecretWasAlreadyInEnv && userSecret) {
     lines.push(formatDotenvLine(ENV_USER_SECRET, userSecret));
   }
   if (!sessionWasAlreadyInEnv && session) {
@@ -414,21 +515,21 @@ function printCopyPasteEnvBlock(
     console.log("");
     console.log(
       chalk.dim(
-        `   Token already in env — if your client can’t read it, add ${ENV_NEXT_PUBLIC_PROJECT_TOKEN} and ${ENV_VITE_PROJECT_TOKEN} with the same ciphertext.`,
+        `   Token already in env — if your client can’t read it, add ${ENV_NEXT_PUBLIC_PROJECT_TOKEN} and ${ENV_VITE_PROJECT_TOKEN} with the same value.`,
       ),
     );
   }
 
-  if (projectTokenWasAlreadyInEnv || userSecretWasAlreadyInEnv || sessionWasAlreadyInEnv) {
+  if (projectTokenWasAlreadyInEnv || (encrypted && userSecretWasAlreadyInEnv) || sessionWasAlreadyInEnv) {
     console.log("");
     if (projectTokenWasAlreadyInEnv) {
       console.log(
         chalk.dim("   ") +
           chalk.white("Project token") +
-          chalk.dim(" was already set — server/Next/Vite token lines omitted above."),
+          chalk.dim(" was already set — token lines omitted above."),
       );
     }
-    if (userSecretWasAlreadyInEnv) {
+    if (encrypted && userSecretWasAlreadyInEnv) {
       console.log(
         chalk.dim("   ") +
           chalk.white(ENV_USER_SECRET) +
@@ -480,38 +581,54 @@ function printPostInitSummary(
     userSecret,
   );
 
-  printTwoAuralogExplainer();
-  printInitHelperSnippetsWithCharacterVoices();
-
-  console.log(
-    chalk.bold.hex("#f85149")("🙅 ") +
-      chalk.white("Never put ") +
-      chalk.bold.white(ENV_USER_SECRET) +
-      chalk.white(" in frontend bundles — only the ") +
-      chalk.bold.white("server") +
-      chalk.white(" AuraLog file gets that."),
-  );
-  console.log(
-    chalk.gray("   The ") +
-      chalk.bold.gray("client") +
-      chalk.gray(" Auralog file reads only the publishable project token from env."),
-  );
+  if (payload.encrypted) {
+    printTwoAuralogExplainer();
+    printInitHelperSnippetsWithCharacterVoices();
+    console.log(
+      chalk.bold.hex("#f85149")("🙅 ") +
+        chalk.white("Never put ") +
+        chalk.bold.white(ENV_USER_SECRET) +
+        chalk.white(" in frontend bundles — only the ") +
+        chalk.bold.white("server") +
+        chalk.white(" AuraLog file gets that."),
+    );
+    console.log(
+      chalk.gray("   The ") +
+        chalk.bold.gray("client") +
+        chalk.gray(" Auralog file reads only the publishable project token from env."),
+    );
+  } else {
+    printSingleAuralogExplainer();
+    printInitHelperSnippetsNoEncryption();
+  }
   console.log("");
 }
 
-function printAlreadyConfiguredSuccess(): void {
+function printAlreadyConfiguredSuccess(encrypted: boolean): void {
   console.log("");
-  console.log(
-    chalk.bold.hex("#ffa657")("🎉 ") +
-      chalk.white("Plot twist — this shell already has token, user secret, and session."),
-  );
+  if (encrypted) {
+    console.log(
+      chalk.bold.hex("#ffa657")("🎉 ") +
+        chalk.white("Plot twist — this shell already has token, user secret, and session."),
+    );
+  } else {
+    console.log(
+      chalk.bold.hex("#ffa657")("🎉 ") +
+        chalk.white("Already set — this shell has token and session. No encryption, no secret needed."),
+    );
+  }
   {
     const a = pickAside(INIT_ALREADY_STRANGE_ASIDES);
     printAside(a.emoji, a.line);
   }
   console.log("");
-  printTwoAuralogExplainer();
-  printInitHelperSnippetsWithCharacterVoices();
+  if (encrypted) {
+    printTwoAuralogExplainer();
+    printInitHelperSnippetsWithCharacterVoices();
+  } else {
+    printSingleAuralogExplainer();
+    printInitHelperSnippetsNoEncryption();
+  }
   {
     const a = pickAside(INIT_ALREADY_LOKI_ASIDES);
     printAside(a.emoji, a.line);
@@ -537,12 +654,6 @@ export async function runInit(): Promise<void> {
   const hasSession = Boolean(getResolvedSession());
   const sessionWasAlreadyInEnv = hasSession;
 
-  if (hasProjectToken && hasUserSecret && hasSession) {
-    printAlreadyConfiguredSuccess();
-    maybePrintGenericSpice();
-    return;
-  }
-
   printInitWelcomeBanner();
 
   if (hasProjectToken && !hasSession) {
@@ -557,8 +668,28 @@ export async function runInit(): Promise<void> {
   }
 
   const projectToken = await resolveProjectTokenForInit();
-  const userSecret = await resolveUserSecretForInit();
   const payload = await fetchProjAuthConfig(projectToken);
+  const encrypted = payload.encrypted;
+
+  // For non-encrypted projects, token + session is sufficient — no secret needed.
+  if (!encrypted && hasProjectToken && hasSession) {
+    printAlreadyConfiguredSuccess(false);
+    maybePrintGenericSpice();
+    return;
+  }
+
+  // For encrypted projects, all three must be present to skip setup.
+  if (encrypted && hasProjectToken && hasUserSecret && hasSession) {
+    printAlreadyConfiguredSuccess(true);
+    maybePrintGenericSpice();
+    return;
+  }
+
+  let userSecret = "";
+  if (encrypted) {
+    userSecret = await resolveUserSecretForInit();
+  }
+
   printPostInitSummary(
     payload,
     projectTokenWasAlreadyInEnv,
@@ -566,15 +697,17 @@ export async function runInit(): Promise<void> {
     sessionWasAlreadyInEnv,
     userSecret,
   );
-  console.log(
-    chalk.hex("#ffa657")("🎬 ") +
-      chalk.dim("Curtain call: ") +
-      chalk.hex("#79c0ff")("auralogger server-check") +
-      chalk.dim(" when the server pipe should flex too."),
-  );
-  {
-    const a = pickAside(INIT_CURTAIN_TONY_ASIDES);
-    printAside(a.emoji, a.line);
+  if (encrypted) {
+    console.log(
+      chalk.hex("#ffa657")("🎬 ") +
+        chalk.dim("Curtain call: ") +
+        chalk.hex("#79c0ff")("auralogger server-check") +
+        chalk.dim(" when the server pipe should flex too."),
+    );
+    {
+      const a = pickAside(INIT_CURTAIN_TONY_ASIDES);
+      printAside(a.emoji, a.line);
+    }
   }
   console.log("");
   maybePrintGenericSpice();
