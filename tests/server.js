@@ -19,17 +19,11 @@ function ensureConfigured() {
   const projectToken =
     process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN ||
     process.env.VITE_AURALOGGER_PROJECT_TOKEN ||
-    process.env.AURALOGGER_PROJECT_TOKEN;
-  if (!projectToken) {
-    throw new Error(
-      "Missing NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN (or VITE_AURALOGGER_PROJECT_TOKEN / AURALOGGER_PROJECT_TOKEN)",
-    );
-  }
-  const userSecret = process.env.AURALOGGER_USER_SECRET;
-  if (!userSecret) {
-    throw new Error("Missing AURALOGGER_USER_SECRET");
-  }
+    process.env.AURALOGGER_PROJECT_TOKEN ||
+    "";
+  const userSecret = process.env.AURALOGGER_USER_SECRET || "";
 
+  // Silent opt-out: missing creds keep local-only logging for this harness.
   AuraServer.configure(projectToken, userSecret);
   configured = true;
 }

@@ -88,7 +88,7 @@ function ensureConfigured(): void {
     console.warn(
       "[Auralogger] Missing project token env; local-only logging enabled.",
     );
-    Auralogger.configure();
+    Auralogger.configure("");
   }
   configured = true;
 }
