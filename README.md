@@ -69,27 +69,34 @@ Run `**auralogger init**` and paste what it prints, or copy the shapes below.
 Save as e.g. `src/lib/auralog/auralog.ts`:
 
 ```ts
-import { auralogger } from "auralogger-cli";
+import { Auralogger } from "auralogger-cli";
 
 let configured = false;
 
 function ensureConfigured(): void {
   if (configured) return;
 
-  const projectToken = process.env.AURALOGGER_PROJECT_TOKEN;
-  if (!projectToken) {
-    throw new Error("Missing AURALOGGER_PROJECT_TOKEN");
+  const projectToken =
+    process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN ||
+    process.env.VITE_AURALOGGER_PROJECT_TOKEN ||
+    process.env.AURALOGGER_PROJECT_TOKEN;
+  // Silent opt-out: if token is missing, we still keep console logging.
+  if (projectToken) {
+    // Token only — no user secret required.
+    Auralogger.configure(projectToken);
+  } else {
+    console.warn(
+      "[Auralogger] Missing project token env; local-only logging enabled.",
+    );
+    Auralogger.configure();
   }
-
-  // Token only — no user secret required.
-  auralogger.configure(projectToken);
   configured = true;
 }
 
 /** Centralized logger — works anywhere, no client/server split needed. */
 export function AuraLog(type: string, message: string, location?: string, data?: unknown): void {
   ensureConfigured();
-  auralogger.log(type, message, location, data);
+  Auralogger.log(type, message, location, data);
 }
 ```
 
@@ -121,12 +128,19 @@ function ensureConfigured(): void {
 
   // AuraClient only needs a project token; proj_auth uses POST /api/{token}/proj_auth (token in path).
   // You can also use hardcoded strings instead of env lookups below (avoid committing real values).
-  const projectToken = process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN;
-  if (!projectToken) {
-    throw new Error("Missing NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN");
+  const projectToken =
+    process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN ||
+    process.env.VITE_AURALOGGER_PROJECT_TOKEN ||
+    process.env.AURALOGGER_PROJECT_TOKEN;
+  // Silent opt-out: if token is missing, we still keep console logging.
+  if (projectToken) {
+    AuraClient.configure(projectToken);
+  } else {
+    console.warn(
+      "[Auralogger] Missing project token env; local-only logging enabled.",
+    );
+    AuraClient.configure("");
   }
-
-  AuraClient.configure( projectToken );
   // use AuraClient.configure() for console only logs in production to remove network costs
   configured = true;
 }
@@ -164,16 +178,21 @@ function ensureConfigured(): void {
   if (configured) return;
 
   // You can also pass string literals to AuraServer.configure(...) instead of process.env (never commit real secrets).
-  const projectToken = process.env.AURALOGGER_PROJECT_TOKEN;
-  if (!projectToken) {
-    throw new Error("Missing AURALOGGER_PROJECT_TOKEN");
-  }
-  const userSecret = process.env.AURALOGGER_USER_SECRET;
-  if (!userSecret) {
-    throw new Error("Missing AURALOGGER_USER_SECRET");
-  }
+  const projectToken =
+    process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN ||
+    process.env.VITE_AURALOGGER_PROJECT_TOKEN ||
+    process.env.AURALOGGER_PROJECT_TOKEN;
+  const userSecret = process.env.AURALOGGER_USER_SECRET || "";
 
-  AuraServer.configure(projectToken, userSecret);
+  // Silent opt-out: if token/secret are missing, keep local logging only.
+  if (projectToken && userSecret) {
+    AuraServer.configure(projectToken, userSecret);
+  } else {
+    console.warn(
+      "[Auralogger] Missing server credentials env; local-only logging enabled.",
+    );
+    AuraServer.configure(projectToken || "", userSecret);
+  }
 // use AuraClient.configure() for console only logs in production to remove network costs
   configured = true;
 }

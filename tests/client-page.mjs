@@ -8,15 +8,37 @@ import clientModule from "./auralogger-client.browser.mjs";
 
 const { AuraClient } = clientModule;
 
-// Same token as tests/client.js (Node harness only — do not ship real tokens in production apps).
-const PROJECT_TOKEN =
-  "9g/mr4Q0MSxD8Yc0k19WK+B6BLnj0t8nGva1RLD/E4i+7zSMoMpTbCqr9FSZ3Q6fX6o4eUGysUaf5jax";
+function resolveProjectToken() {
+  const fromQuery = new URLSearchParams(globalThis.location?.search ?? "").get(
+    "projectToken",
+  );
+  const fromLocalStorage =
+    globalThis.localStorage?.getItem("AURALOGGER_PROJECT_TOKEN") ?? null;
+  const picked = (fromQuery ?? fromLocalStorage ?? "").trim();
+  if (picked) return picked;
+
+  const prompted = globalThis.prompt?.(
+    "Paste AURALOGGER_PROJECT_TOKEN (or NEXT_PUBLIC_*/VITE_* equivalent). It will be stored in localStorage for this test page.",
+  );
+  const token = (prompted ?? "").trim();
+  if (!token) {
+    throw new Error(
+      "Missing project token. Provide ?projectToken=... or set localStorage['AURALOGGER_PROJECT_TOKEN'].",
+    );
+  }
+  try {
+    globalThis.localStorage?.setItem("AURALOGGER_PROJECT_TOKEN", token);
+  } catch {
+    // ignore storage failures (private mode, blocked storage, etc.)
+  }
+  return token;
+}
 
 let configured = false;
 
 function ensureConfigured() {
   if (configured) return;
-  AuraClient.configure(PROJECT_TOKEN);
+  AuraClient.configure(resolveProjectToken());
   configured = true;
 }
 

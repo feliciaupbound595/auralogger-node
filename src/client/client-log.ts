@@ -159,28 +159,33 @@ async function fetchProjAuthConfig(projectToken: string): Promise<{
   project_id: string | null;
   session: string | null;
   styles: unknown;
-}> {
+} | null> {
   const response = await fetch(buildProjAuthUrl(resolveApiBaseUrl(), projectToken), {
     method: "POST",
   }).catch((error: unknown) => {
     const msg = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Can't reach Auralogger right now — check your network or VPN, then try again. (${msg})`,
+    console.warn(
+      `auralogger: proj_auth unreachable; local-only logging (${msg})`,
     );
+    return null;
   });
+  if (!response) {
+    return null;
+  }
 
   if (!response.ok) {
-    throw new Error(await parseErrorBody(response));
+    const body = await parseErrorBody(response).catch(() => "Request failed.");
+    console.warn(`auralogger: proj_auth failed; local-only logging (${body})`);
+    return null;
   }
 
   const authResponse: unknown = await response.json().catch(() => {
-    throw new Error("Got a reply, but it wasn’t readable JSON. Try again in a moment.");
+    console.warn("auralogger: proj_auth replied with non-JSON; local-only logging.");
+    return null;
   });
-
-  if (!isPlainAuthResponse(authResponse)) {
-    throw new Error(
-      "The reply didn’t look right. Run auralogger init again or double-check your project token.",
-    );
+  if (!authResponse || !isPlainAuthResponse(authResponse)) {
+    console.warn("auralogger: proj_auth response shape unexpected; local-only logging.");
+    return null;
   }
 
   return {
@@ -226,16 +231,13 @@ async function ensureHydratedRuntimeConfig(): Promise<void> {
       let payload: { project_id: string | null; session: string | null; styles: unknown } | null =
         null;
       for (let attempt = 1; attempt <= SDK_RETRY_ATTEMPTS; attempt += 1) {
-        try {
-          payload = await fetchProjAuthConfig(token);
+        payload = await fetchProjAuthConfig(token);
+        if (payload) {
           break;
-        } catch (error: unknown) {
-          if (attempt >= SDK_RETRY_ATTEMPTS) {
-            throw error;
-          }
-          const msg = toErrorMessage(error);
+        }
+        if (attempt < SDK_RETRY_ATTEMPTS) {
           console.warn(
-            `auralogger: proj_auth failed (${msg}); retrying (${attempt + 1}/${SDK_RETRY_ATTEMPTS})...`,
+            `auralogger: proj_auth failed; retrying (${attempt + 1}/${SDK_RETRY_ATTEMPTS})...`,
           );
           await new Promise((r) => setTimeout(r, SDK_RETRY_DELAY_MS));
         }
@@ -246,7 +248,10 @@ async function ensureHydratedRuntimeConfig(): Promise<void> {
       const projectId = payload.project_id?.trim() ?? "";
       const session = payload.session?.trim() ?? "";
       if (!projectId || !session) {
-        throw new Error("auralogger: proj_auth response missing project id or session.");
+        console.warn(
+          "auralogger: proj_auth response missing project id or session; local-only logging.",
+        );
+        return;
       }
       applyProjAuthPayload(payload);
     })();
@@ -685,7 +690,17 @@ export class AuraClient {
     const token =
       typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
     if (!token) {
-      throw new Error("auralogger: projectToken cannot be empty.");
+      console.warn(
+        "auralogger: AuraClient.configure called with empty token; continuing in local-only mode.",
+      );
+      overrideProjectToken = undefined;
+      hydrateFromSecretPromise = null;
+      clearHydratedRuntimeConfig();
+      resetBufferedLogs();
+      localSessionId = null;
+      warnedMissingProjectToken = false;
+      warnedMissingProjectId = false;
+      return;
     }
     overrideProjectToken = token;
     hydrateFromSecretPromise = null;

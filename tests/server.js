@@ -16,11 +16,16 @@ function ensureConfigured() {
   if (configured) return;
 
   // You can also pass string literals to AuraServer.configure(...) instead of process.env (never commit real secrets).
-  const projectToken = "9g/mr4Q0MSxD8Yc0k19WK+B6BLnj0t8nGva1RLD/E4i+7zSMoMpTbCqr9FSZ3Q6fX6o4eUGysUaf5jax";
+  const projectToken =
+    process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN ||
+    process.env.VITE_AURALOGGER_PROJECT_TOKEN ||
+    process.env.AURALOGGER_PROJECT_TOKEN;
   if (!projectToken) {
-    throw new Error("Missing AURALOGGER_PROJECT_TOKEN");
+    throw new Error(
+      "Missing NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN (or VITE_AURALOGGER_PROJECT_TOKEN / AURALOGGER_PROJECT_TOKEN)",
+    );
   }
-  const userSecret = "MC4CAQAwBQYDK2VuBCIEIEcy7NQ8x18+heO39XaGWITwOeTCYtoaMsX6jNjlckGI"
+  const userSecret = process.env.AURALOGGER_USER_SECRET;
   if (!userSecret) {
     throw new Error("Missing AURALOGGER_USER_SECRET");
   }

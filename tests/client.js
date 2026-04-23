@@ -17,9 +17,14 @@ function ensureConfigured() {
 
   // AuraClient.configure() only needs the project token — never put the user secret in client bundles.
   // You can also use hardcoded strings instead of env lookups below (avoid committing real values).
-  const projectToken = "kGKyvNjeI4mDAm3E5NzUL65uyzNNlriEPvcQZuOxCVC4PjA9Xyw9sfLBOQRgfdoXsb2oogx0mMCmQ/Uo"
+  const projectToken =
+    process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN ||
+    process.env.VITE_AURALOGGER_PROJECT_TOKEN ||
+    process.env.AURALOGGER_PROJECT_TOKEN;
   if (!projectToken) {
-    throw new Error("Missing NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN");
+    throw new Error(
+      "Missing NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN (or VITE_AURALOGGER_PROJECT_TOKEN / AURALOGGER_PROJECT_TOKEN)",
+    );
   }
   AuraClient.configure(projectToken);
   configured = true;
