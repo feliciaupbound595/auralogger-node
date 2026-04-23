@@ -1,6 +1,6 @@
 {
   "name": "auralogger-cli",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Real-time logging and observability SDK and CLI for streaming, storing, searching, and filtering application logs—beautifully visualized and accessible from anywhere in the world across terminal, web, and any screen.",
   "keywords": [
     "auralogger",

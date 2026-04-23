@@ -469,7 +469,7 @@ export function printLog(log: PrintableLogRow, configStyles: unknown): void {
 
 `changes required`
 
-`1. first try checking for project token, if in env okay else ask to type, then do proj_auth request using the token. if encrypted true then check for user secret or do typing prompt, if encrypted false then go ahead with showing the instructions about adding the logger code snippet involving the index exported client side auralogger in node or the non encrypted flow code snippet for python`  
+`1. first try checking for project token, if in env okay else ask to type, then do proj_auth request using the token. if encrypted true then check for user secret or do typing prompt, if encrypted false then go ahead with showing the instructions about adding the logger code snippet involving the index exported client side Auralogger in node or the non encrypted flow code snippet for python`  
 `and do rest of it like we usually do`  
 `if encrypted is true then we already have the right flow for it rn, use that same so everything else is same except this`  
 
@@ -1485,7 +1485,18 @@ export class AuraClient {
     const token =
       typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
     if (!token) {
-      throw new Error("auralogger: projectToken cannot be empty.");
+      // No blocking errors: empty token opts into local-only logging.
+      console.warn(
+        "auralogger: AuraClient.configure called with empty token; continuing in local-only mode.",
+      );
+      overrideProjectToken = undefined;
+      hydrateFromSecretPromise = null;
+      clearHydratedRuntimeConfig();
+      resetBufferedLogs();
+      localSessionId = null;
+      warnedMissingProjectToken = false;
+      warnedMissingProjectId = false;
+      return;
     }
     overrideProjectToken = token;
     hydrateFromSecretPromise = null;
