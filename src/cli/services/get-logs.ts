@@ -39,6 +39,7 @@ interface LogRow {
 
 interface LogsResponseBody {
   logs?: unknown;
+  nextpage?: number | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -111,12 +112,12 @@ export function formatGetLogsHelp(): string {
     "  -<field> [--<op>] <json-value-token>",
     "",
     "Value rules:",
-    "  - maxcount, skip: JSON number (e.g. 50)",
+    "  - maxcount, nextpage: JSON number (e.g. 50)",
     "  - everything else: JSON array (e.g. [\"error\",\"warn\"])",
     "",
     "Examples:",
     "  auralogger get-logs -type '[\"error\",\"warn\"]' -maxcount 50",
-    "  auralogger get-logs -message '[\"timeout\"]' -skip 20 -maxcount 30",
+    "  auralogger get-logs -message '[\"timeout\"]' -nextpage 18423 -maxcount 30",
     "  auralogger get-logs -type --not-in '[\"info\",\"debug\"]' -time --since '[\"10m\"]'",
     "  auralogger get-logs -data.userId '[\"06431f39-55e2-4289-80c8-5d0340a8b66e\"]'",
   ].join("\n");
@@ -156,7 +157,7 @@ export async function runGetLogsCore(
     }
     console.log(
       chalk.yellow("👻 ") +
-        chalk.white("Nothing matched — try looser filters, smaller -skip, or bigger -maxcount; if it's a new project, maybe nothing's logged yet."),
+        chalk.white("Nothing matched — try looser filters or bigger -maxcount; if it's a new project, maybe nothing's logged yet."),
     );
     {
       const a = pickAside(GET_LOGS_EMPTY_ASIDES);
@@ -178,6 +179,14 @@ export async function runGetLogsCore(
       printAside(
         t.emoji,
         formatAsideTemplate(t.line, { n: printed }),
+      );
+    }
+    const nextpage = body.nextpage;
+    if (typeof nextpage === "number") {
+      console.log(
+        chalk.dim("📄 ") +
+          chalk.white("More results: ") +
+          chalk.bold.hex("#79c0ff")(`auralogger get-logs -nextpage ${nextpage}`),
       );
     }
   }

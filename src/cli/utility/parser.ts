@@ -47,7 +47,7 @@ export function parseCommand(tokens: string[]): ParsedGetLogsCommand {
       throw new Error(`Invalid JSON for field '${field}'`);
     }
 
-    const numericField = field === "maxcount" || field === "skip";
+    const numericField = field === "maxcount" || field === "nextpage";
     if (numericField) {
       if (typeof value !== "number" || !Number.isFinite(value)) {
         throw new Error(`Field '${field}' expects a JSON number token (e.g. 50)`);

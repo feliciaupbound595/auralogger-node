@@ -1,11 +1,12 @@
-<!-- Generated: 2026-04-15 UTC — ultra-detailed execution + integration reference -->
+
+
 # Feature flows (CLI + SDK) — deep trace
 
 This document is the **line-by-line behavioural map** for everything that ships under `node/src/`: how the CLI binary dispatches, how each command and SDK class talks to HTTP/WebSocket, where credentials live, which **optimisations** exist (single-flight fetches, socket reuse, idle close, env short-circuits), and how **npm `exports`** wire Node vs browser bundles.
 
-Companion docs: **[`routes.md`](routes.md)** (HTTP/WS paths + auth), **[`api-urls.md`](api-urls.md)** (hosts / env), **[`bdd.md`](bdd.md)** (observable behaviour), **[`file-map.md`](file-map.md)** (edit locations).
+Companion docs: `**[routes.md](routes.md)**` (HTTP/WS paths + auth), `**[api-urls.md](api-urls.md)**` (hosts / env), `**[bdd.md](bdd.md)**` (observable behaviour), `**[file-map.md](file-map.md)**` (edit locations).
 
-All paths below are relative to the **`node/`** package root unless noted.
+All paths below are relative to the `**node/**` package root unless noted.
 
 ---
 
@@ -16,13 +17,13 @@ All paths below are relative to the **`node/`** package root unless noted.
 3. [Process bootstrap: quiet dotenv → binary → env load](#process-bootstrap-quiet-dotenv--binary--env-load)
 4. [Shared wire utilities](#shared-wire-utilities)
 5. [Styling pipeline (`proj_auth` → terminal)](#styling-pipeline-proj_auth--terminal)
-6. [Flow: `auralogger init`](#flow-auralogger-init)
-7. [Flow: `auralogger get-logs`](#flow-auralogger-get-logs)
-8. [Flow: `auralogger server-check`](#flow-auralogger-server-check)
-9. [Flow: `auralogger client-check`](#flow-auralogger-client-check)
+6. [Flow: `auralogger init](#flow-auralogger-init)`
+7. [Flow: `auralogger get-logs](#flow-auralogger-get-logs)`
+8. [Flow: `auralogger server-check](#flow-auralogger-server-check)`
+9. [Flow: `auralogger client-check](#flow-auralogger-client-check)`
 10. [Flow: `AuraServer` (Node SDK)](#flow-auraserver-node-sdk)
 11. [Flow: `AuraClient` (browser-safe SDK)](#flow-auraclient-browser-safe-sdk)
-12. [Flow: `test-serverlog` / `test-clientlog`](#flow-test-serverlog--test-clientlog)
+12. [Flow: `test-serverlog` / `test-clientlog](#flow-test-serverlog--test-clientlog)`
 13. [Cross-cutting failure & personality surfaces](#cross-cutting-failure--personality-surfaces)
 14. [When you add a command or SDK surface](#when-you-add-a-command-or-sdk-surface)
 
@@ -30,25 +31,27 @@ All paths below are relative to the **`node/`** package root unless noted.
 
 ## Credential matrix
 
-| Flow | Project token | User secret | HTTP base | WS base | Notes |
-|------|---------------|-------------|-----------|---------|--------|
-| **`init`** | Path on `proj_auth`; from env or prompt | Prompt/env for dotenv copy **only**; **not** sent on `proj_auth` | `resolveApiBaseUrl()` | — | `POST` has no auth header |
-| **`get-logs`** | Path on `/api/{token}/logs` | Headers **`secret`** + compat **`user_secret`** | `resolveApiBaseUrl()` | — | JSON body `{ filters }` |
-| **`server-check`** | Path on WS URL | `Authorization: Bearer` on WS | `resolveApiBaseUrl()` for `proj_auth` | `resolveWsBaseUrl()` | Same HTTP hydrate as CLI checks |
-| **`client-check`** | Path on `proj_auth` + WS | Used for `proj_auth` only; **not** on WS | `resolveApiBaseUrl()` | `resolveWsBaseUrl()` | Browser path: token in URL only |
-| **`AuraServer.log`** | Path on WS; may path on `proj_auth` | Bearer on WS; optional override / env | `resolveApiBaseUrl()` | `resolveWsBaseUrl()` | Hydrates id/session/styles via `proj_auth` |
-| **`AuraClient.log`** | Path on `proj_auth` + WS | **Never** | `resolveApiBaseUrl()` | `resolveWsBaseUrl()` | No `loadCliEnvFiles` in browser path |
+
+| Flow                 | Project token                           | User secret                                                      | HTTP base                             | WS base              | Notes                                      |
+| -------------------- | --------------------------------------- | ---------------------------------------------------------------- | ------------------------------------- | -------------------- | ------------------------------------------ |
+| `**init**`           | Path on `proj_auth`; from env or prompt | Prompt/env for dotenv copy **only**; **not** sent on `proj_auth` | `resolveApiBaseUrl()`                 | —                    | `POST` has no auth header                  |
+| `**get-logs`**       | Path on `/api/{token}/logs`             | Headers `**secret**` + compat `**user_secret**`                  | `resolveApiBaseUrl()`                 | —                    | JSON body `{ filters }`                    |
+| `**server-check**`   | Path on WS URL                          | `Authorization: Bearer` on WS                                    | `resolveApiBaseUrl()` for `proj_auth` | `resolveWsBaseUrl()` | Same HTTP hydrate as CLI checks            |
+| `**client-check**`   | Path on `proj_auth` + WS                | Used for `proj_auth` only; **not** on WS                         | `resolveApiBaseUrl()`                 | `resolveWsBaseUrl()` | Browser path: token in URL only            |
+| `**AuraServer.log`** | Path on WS; may path on `proj_auth`     | Bearer on WS; optional override / env                            | `resolveApiBaseUrl()`                 | `resolveWsBaseUrl()` | Hydrates via `proj_auth`; WS body is a **JSON array** of log objects (batched) |
+| `**AuraClient.log**` | Path on `proj_auth` + WS                | **Never**                                                        | `resolveApiBaseUrl()`                 | `resolveWsBaseUrl()` | No `loadCliEnvFiles`; same **batched** WS array shape as server                   |
+
 
 ---
 
 ## Build & publish integration (`package.json` → `dist/`)
 
-- **Compilation:** `tsconfig` maps `src/` → `dist/` (see **[`file-map.md`](file-map.md)**). The published **`bin`** is `dist/cli/bin/auralogger.js`, built from `src/cli/bin/auralogger.ts`.
+- **Compilation:** `tsconfig` maps `src/` → `dist/` (see `**[file-map.md](file-map.md)`**). The published `**bin**` is `dist/cli/bin/auralogger.js`, built from `src/cli/bin/auralogger.ts`.
 - **Conditional exports** (from `package.json`):
-  - **`"."`**: `browser` resolves to `dist/index.browser.js`; Node/default to `dist/index.js`. Bundlers pick **`browser`** when targeting the web.
-  - **`"./server"`**: `browser` → `dist/server.browser.js` (stub **`AuraServer`**); Node → `dist/server.js` (real **`ws`** implementation).
-  - **`"./client"`** and **`"./server-check"`** / **`"./client-check"`** are unconditional CJS entrypoints to `dist/*.js`.
-- **`./init`** is declared in `exports` pointing at `dist/init.js`. The repo’s `file-map.md` notes **`src/init.ts` may be missing** — if `dist/init.js` is absent after build, align the publish entry or add a barrel; the **runtime `init` command** is implemented in **`cli/services/init.ts`** and reached only via the **CLI bin**, not necessarily via `./init` subpath.
+  - `**"."`**: `browser` resolves to `dist/index.browser.js`; Node/default to `dist/index.js`. Bundlers pick `**browser**` when targeting the web.
+  - `**"./server"**`: `browser` → `dist/server.browser.js` (stub `**AuraServer**`); Node → `dist/server.js` (real `**ws**` implementation).
+  - `**"./client"**` and `**"./server-check"**` / `**"./client-check"**` are unconditional CJS entrypoints to `dist/*.js`.
+- `**./init**` is declared in `exports` pointing at `dist/init.js`. The repo’s `file-map.md` notes `**src/init.ts` may be missing** — if `dist/init.js` is absent after build, align the publish entry or add a barrel; the **runtime `init` command** is implemented in `**cli/services/init.ts`** and reached only via the **CLI bin**, not necessarily via `./init` subpath.
 
 ```47:83:node/package.json
   "exports": {
@@ -238,9 +241,9 @@ async function main(): Promise<void> {
 
 **Observations:**
 
-- **`loadCliEnvFiles()`** runs at the start of **every** successful command path (and again inside several services — redundant but **idempotent**: dotenv merge is stable for fixed cwd).
-- **Success accounting:** `recordCliSuccess(command)` only runs when the handler returns without throwing; **`main().catch`** records failure and exits `1` on uncaught errors.
-- **`get-logs`** passes **full `args` array** (including `get-logs` token) into `runGetLogs` because `parseCommand` expects `tokens[0] === "get-logs"`.
+- `**loadCliEnvFiles()`** runs at the start of **every** successful command path (and again inside several services — redundant but **idempotent**: dotenv merge is stable for fixed cwd).
+- **Success accounting:** `recordCliSuccess(command)` only runs when the handler returns without throwing; `**main().catch`** records failure and exits `1` on uncaught errors.
+- `**get-logs**` passes **full `args` array** (including `get-logs` token) into `runGetLogs` because `parseCommand` expects `tokens[0] === "get-logs"`.
 
 ### Step 2 — `loadCliEnvFiles` (disk → `process.env`)
 
@@ -264,7 +267,7 @@ export function loadCliEnvFiles(cwd: string = process.cwd()): void {
 }
 ```
 
-**Integration note:** **`AuraClient`** never imports this file — browser apps must inject `NEXT_PUBLIC_*` / `VITE_*` / runtime `configure()` themselves. **`AuraServer`** calls `loadCliEnvFiles(process.cwd())` once on first log via `ensureNodeEnvLoadedOnce()`.
+**Integration note:** `**AuraClient`** never imports this file — browser apps must inject `NEXT_PUBLIC_*` / `VITE_*` / runtime `configure()` themselves. `**AuraServer**` calls `loadCliEnvFiles(process.cwd())` once on first log via `ensureNodeEnvLoadedOnce()`.
 
 ---
 
@@ -273,7 +276,7 @@ export function loadCliEnvFiles(cwd: string = process.cwd()): void {
 ### HTTP(S) and WebSocket bases — `utils/backend-origin.ts`
 
 ```34:67:node/src/utils/backend-origin.ts
-/** HTTPS base for `/api/*` requests (env `AURALOGGER_API_URL` overrides). */
+/** HTTPS base for `/api/`* requests (env `AURALOGGER_API_URL` overrides). */
 export function resolveApiBaseUrl(): string {
   const fromEnv = readEnvTrimmed("AURALOGGER_API_URL");
   if (fromEnv) {
@@ -309,7 +312,7 @@ export function buildProjectLogsUrl(apiBaseUrl: string, projectToken: string): s
 }
 ```
 
-**Design detail:** **`resolveApiBaseUrl`** defaults to **`DEFAULT_AURALOGGER_WEB_ORIGIN`** (`https://auralogger.com`), while **`resolveWsBaseUrl`** defaults from **`DEFAULT_AURALOGGER_ORIGIN`** (`https://api.auralogger.com`) mapped to **`wss://api.auralogger.com`**. Custom deployments must set **`AURALOGGER_API_URL`** / **`AURALOGGER_WS_URL`** consistently if hosts diverge.
+**Design detail:** `**resolveApiBaseUrl`** defaults to `**DEFAULT_AURALOGGER_WEB_ORIGIN**` (`https://auralogger.com`), while `**resolveWsBaseUrl**` defaults from `**DEFAULT_AURALOGGER_ORIGIN**` (`https://api.auralogger.com`) mapped to `**wss://api.auralogger.com**`. Custom deployments must set `**AURALOGGER_API_URL**` / `**AURALOGGER_WS_URL**` consistently if hosts diverge.
 
 ### Env readers — `utils/env-config.ts` (tokens, session, styles precedence)
 
@@ -350,7 +353,7 @@ export function tryParseResolvedStyles(): unknown[] | null {
 ```94:107:node/src/utils/env-config.ts
 /**
  * Styles for SDK console output: same precedence as `get-logs` — embedded
- * `AURALOGGER_PROJECT_STYLES` / `NEXT_PUBLIC_*` / `VITE_*` wins, then values
+ * `AURALOGGER_PROJECT_STYLES` / `NEXT_PUBLIC_`* / `VITE_*` wins, then values
  * hydrated from `POST .../proj_auth`, then `[]` (defaults inside `printLog`).
  */
 export function resolveStylesForConsolePrint(
@@ -366,7 +369,7 @@ export function resolveStylesForConsolePrint(
 
 ### JSON error extraction — `utils/http-utils.ts`
 
-Used by **`fetchProjAuthConfig`** (`init.ts`) and **`AuraClient`**’s local `fetchProjAuthConfig`, and **`get-logs`** error paths.
+Used by `**fetchProjAuthConfig**` (`init.ts`) and `**AuraClient**`’s local `fetchProjAuthConfig`, and `**get-logs**` error paths.
 
 ```1:19:node/src/utils/http-utils.ts
 export async function parseErrorBody(response: Response): Promise<string> {
@@ -397,7 +400,7 @@ export async function parseErrorBody(response: Response): Promise<string> {
 export const DEFAULT_SOCKET_IDLE_CLOSE_MS = 60_000;
 ```
 
-Both **`AuraServer`** and **`AuraClient`** schedule **`bumpSocketIdleTimer`** on **open** and before **send** when already open — **optimisation** to avoid holding sockets forever in long-lived servers.
+Both `**AuraServer**` and `**AuraClient**` schedule `**bumpSocketIdleTimer**` on **open** and before **send** when already open — **optimisation** to avoid holding sockets forever in long-lived servers.
 
 ---
 
@@ -405,7 +408,7 @@ Both **`AuraServer`** and **`AuraClient`** schedule **`bumpSocketIdleTimer`** on
 
 ### Normalisation — `cli/utility/log-styles.ts`
 
-`buildStyleEntriesFromProjAuth` accepts **`null`**, **JSON string**, **array**, or **object keyed by log type**; always produces an array of single-key objects suitable for env export.
+`buildStyleEntriesFromProjAuth` accepts `**null`**, **JSON string**, **array**, or **object keyed by log type**; always produces an array of single-key objects suitable for env export.
 
 ```208:230:node/src/cli/utility/log-styles.ts
 export function buildStyleEntriesFromProjAuth(
@@ -433,7 +436,7 @@ export function buildStyleEntriesFromProjAuth(
 }
 ```
 
-**`importance` sort** inside `buildStyleEntriesFromApi` stabilises override order when the API sends rows out of order.
+`**importance` sort** inside `buildStyleEntriesFromApi` stabilises override order when the API sends rows out of order.
 
 ### Terminal render — `cli/services/log-print.ts`
 
@@ -458,17 +461,23 @@ export function printLog(log: PrintableLogRow, configStyles: unknown): void {
 }
 ```
 
-**Optimisation / resilience:** **`chalk.rgb`** is wrapped in **`rgbPaint`** try/catch; any style resolution failure falls back to **`printLogPlain`** so logs still print.
+**Optimisation / resilience:** `**chalk.rgb`** is wrapped in `**rgbPaint**` try/catch; any style resolution failure falls back to `**printLogPlain**` so logs still print.
 
 ---
 
 ## Flow: `auralogger init`
 
+`changes required`
+
+`1. first try checking for project token, if in env okay else ask to type, then do proj_auth request using the token. if encrypted true then check for user secret or do typing prompt, if encrypted false then go ahead with showing the instructions about adding the logger code snippet involving the index exported client side auralogger in node or the non encrypted flow code snippet for python`  
+`and do rest of it like we usually do`  
+`if encrypted is true then we already have the right flow for it rn, use that same so everything else is same except this`  
+
 ### Entry sequence
 
-1. Bin **`main()`** calls **`runInit()`** (`init.ts`).
-2. **`runInit`** immediately calls **`loadCliEnvFiles()`** again (same cwd).
-3. **Fast path:** if **`getResolvedProjectToken()`**, **`getResolvedUserSecret()`**, and **`getResolvedSession()`** are all truthy, **`printAlreadyConfiguredSuccess()`** runs and **returns without any HTTP** — **optimisation** for repeat inits.
+1. Bin `**main()**` calls `**runInit()**` (`init.ts`).
+2. `**runInit**` immediately calls `**loadCliEnvFiles()**` again (same cwd).
+3. **Fast path:** if `**getResolvedProjectToken()`**, `**getResolvedUserSecret()**`, and `**getResolvedSession()**` are all truthy, `**printAlreadyConfiguredSuccess()**` runs and **returns without any HTTP** — **optimisation** for repeat inits.
 
 ```514:533:node/src/cli/services/init.ts
 export async function runInit(): Promise<void> {
@@ -495,8 +504,8 @@ export async function runInit(): Promise<void> {
 
 ### Credential resolution
 
-- **`resolveProjectTokenForInit`**: env via **`getResolvedProjectToken()`** else **`promptForProjectToken()`** (readline).
-- **`resolveUserSecretForInit`**: **`getResolvedUserSecret()`** else prompt.
+- `**resolveProjectTokenForInit**`: env via `**getResolvedProjectToken()**` else `**promptForProjectToken()**` (readline).
+- `**resolveUserSecretForInit**`: `**getResolvedUserSecret()**` else prompt.
 
 ```91:107:node/src/cli/services/init.ts
 /** Project token from env or interactive prompt. */
@@ -551,16 +560,29 @@ export async function fetchProjAuthConfig(projectToken: string): Promise<InitCon
 }
 ```
 
-**Payload shaping:** **`buildConfigPayload`** injects **`project_token`** and runs **`buildStyleEntriesFromProjAuth`** on **`authResponse.styles`** so CLI output matches env JSON shape.
+**Payload shaping:** `**buildConfigPayload`** injects `**project_token**` and runs `**buildStyleEntriesFromProjAuth**` on `**authResponse.styles**` so CLI output matches env JSON shape.
+
+`**encrypted` normalisation** (recent change): the `ProjAuthResponse` interface now types `encrypted` as `boolean | string | null` because PostgREST may return the string `"true"`. `buildConfigPayload` normalises it:
+
+```typescript
+const rawEncrypted = authResponse.encrypted ?? authResponse.encryption ?? true;
+const encrypted = rawEncrypted === true || rawEncrypted === "true";
+```
+
+`**project_name` resolution** (recent change): `buildConfigPayload` now prefers the `name` field and falls back to `project_name` for backward compat with older API shapes:
+
+```typescript
+project_name: authResponse.name ?? authResponse.project_name ?? null,
+```
 
 ### Output: dotenv block + snippets
 
-- **`printCopyPasteEnvBlock`** omits lines already present in env (token / secret / session dedupe).
-- **`printInitHelperSnippetsWithCharacterVoices`** prints **`buildAuraClientWrapperSnippet`** and **`buildAuraServerWrapperSnippet`** strings with syntax highlighting via **`printCodeStory`**.
+- `**printCopyPasteEnvBlock**` omits lines already present in env (token / secret / session dedupe).
+- `**printInitHelperSnippetsWithCharacterVoices**` prints `**buildAuraClientWrapperSnippet**` and `**buildAuraServerWrapperSnippet**` strings with syntax highlighting via `**printCodeStory**`.
 
 ### Shared helper: `resolveProjectContextForCliChecks`
 
-Used by **`server-check`**, **`client-check`**, and mirrors **`AuraServer.syncFromSecret`**’s credential model comment in source.
+Used by `**server-check**`, `**client-check**`, and mirrors `**AuraServer.syncFromSecret**`’s credential model comment in source.
 
 ```155:178:node/src/cli/services/init.ts
 /**
@@ -589,11 +611,153 @@ export async function resolveProjectContextForCliChecks(): Promise<{
 }
 ```
 
-**Integration:** **`AuraServer`** imports this same **`fetchProjAuthConfig`** from **`../cli/services/init`**, so **CLI and server SDK always share** the same HTTP contract and error strings for `proj_auth`.
+**Integration:** `**AuraServer`** imports this same `**fetchProjAuthConfig**` from `**../cli/services/init**`, so **CLI and server SDK always share** the same HTTP contract and error strings for `proj_auth`.
 
 ---
 
 ## Flow: `auralogger get-logs`
+
+`there has been some changes in filter fields for the api we request the logs for`
+
+`here is the updated route`
+
+```markdown
+
+
+### `POST /api/{project_token}/logs`
+
+Token-path log query. Behaviour branches on `projects.encrypted` and whether `user_secret` is supplied. The handler reads `projects.encrypted` with **strict** boolean `true` only (unlike `proj_auth`, which also treats the string `'true'` as encrypted).
+
+**Expects**
+
+
+| Kind    | Value                                                                                                         |
+| ------- | ------------------------------------------------------------------------------------------------------------- |
+| Path    | `project_token` — token ciphertext (URL-encoded).                                                             |
+| Headers | `user_secret`: **optional** (trimmed). Omit to **skip decryption** and receive raw (possibly encrypted) log rows. |
+| Body    | JSON: `{ "filters": Filter[] }`.                                                                              |
+
+
+**Execution paths**
+
+**Path A — `projects.encrypted = false`** (unencrypted project):
+
+- All filters including `message` and `data.`* are applied directly at the DB level using `ILIKE`.
+- If `user_secret` is present **and** the path token role is `owner`, `collaborator`, or `viewer`, the project secret is resolved and passed for any legacy `iv`-tagged rows (`ingestion` tokens cannot resolve the secret — omit `user_secret` or expect `401` `Failed to resolve project secret`).
+- Returns `{ "logs": [...], "nextpage": <id> | null }`.
+
+**Path B — `projects.encrypted = true` + `user_secret` present** (encrypted, decrypt requested):
+
+- `message` and `data.`* filters are separated from structural filters (`type`, `location`, `session`, `time`, `nextpage`).
+- Internal batch loop:
+  1. Query DB with structural filters + cursor; batch size = requested `maxcount`.
+  2. Decrypt each row (`message` and `data`) using the resolved project secret.
+  3. Apply `message` / `data.*` filters in memory (case-insensitive substring / field equality).
+  4. Accumulate results; if fewer than `maxcount` collected and DB returned a full batch, advance the cursor and repeat.
+- `nextpage` returned to the client is the `id` of the last DB row in the final batch (not the last collected row), allowing correct resumption even when some rows are filtered out post-decryption.
+
+**Path C — `projects.encrypted = true`, no `user_secret`** (encrypted, raw):
+
+- `message` and `data.`* filters are stripped (cannot evaluate ciphertext).
+- Structural filters are applied at the DB level.
+- Rows are returned as stored (ciphertext in `message` / `data` when `iv` is set).
+
+**Decryption flow** (Paths A and B when `user_secret` is present):
+
+1. Resolve token row by path `project_token` (roles allowed to derive `project_secret`: `owner`, `collaborator`, `viewer` — not `ingestion`).
+2. Read `owner_key` from `projects` for that `project_id`.
+3. Derive shared key: `deriveSharedSecret(user_secret, owner_key)` (X25519 ECDH + HKDF-SHA256, salt = empty, info = `project-key`, 32 bytes — see `[project-token-crypto.ts](../src/lib/crypto/project-token-crypto.ts)`).
+4. Decrypt the **path token** using the token-row `iv` to get `project_secret`.
+5. For each log row: if `iv` is set, decrypt `message`; decrypt `data` when non-empty.
+
+**Returns** `200`
+
+```json
+{
+  "logs": [ /* rows */ ],
+  "nextpage": 18423 | null
+}
+```
+
+`nextpage` is `null` when the DB returned fewer rows than `maxcount` (no further results). Otherwise it is the `id` of the last row in the batch; pass it as `{ "field": "nextpage", "op": "eq", "value": <nextpage> }` in the next request.
+
+**Errors**
+
+
+| Status | Body (representative)                                                                 |
+| ------ | ------------------------------------------------------------------------------------- |
+| 400    | `{ "error": "Invalid JSON body" }`; filter / body validation messages               |
+| 401    | `{ "error": "Invalid token" }` (unknown token **or** `project_tokens` query error); `{ "error": "Failed to resolve project secret" }` |
+| 500    | `{ "error": "Failed to resolve project" }`, `{ "error": "Failed to fetch logs" }`, etc. |
+| 503    | `LOGS_SCHEMA_UNAVAILABLE` (missing `logs` relation on query)                         |
+
+Token path does **not** return `PROJECT_TOKENS_SCHEMA_UNAVAILABLE`: a missing or broken `project_tokens` lookup surfaces as **`401` `Invalid token`**.
+
+
+---
+
+### Filter DSL (shared)
+
+Used by both `POST /api/projects/{project_id}/logs` and `POST /api/{project_token}/logs`.
+
+**Default `op` when omitted**
+
+
+| Field / prefix                  | Default `op` |
+| ------------------------------- | ------------ |
+| `type`                          | `in`         |
+| `message`                       | `contains`   |
+| `location`                      | `in`         |
+| `session`                       | `eq`         |
+| `time`                          | `since`      |
+| `data.`*                        | `eq`         |
+| `order`, `maxcount`, `nextpage` | `eq`         |
+
+
+**Allowed ops**
+
+
+| Field         | Ops                                                                                       |
+| ------------- | ----------------------------------------------------------------------------------------- |
+| `type`        | `in`, `not-in`                                                                            |
+| `message`     | `contains`, `not-contains`                                                                |
+| `location`    | `in`, `not-in`                                                                            |
+| `session`     | `eq`                                                                                      |
+| `time`        | `since`, `from-to`                                                                        |
+| `order`       | `eq` — `["newest-first"]` or `["oldest-first"]`                                           |
+| `maxcount`    | `eq` — number, max **100** (default **50**)                                               |
+| `nextpage`    | `eq` — integer `id` of the last row from the previous page; omit (or null) for first page |
+| `data.<path>` | `eq` — value is a one-element array                                                       |
+
+
+**Example body**
+
+```json
+{
+  "filters": [
+    { "field": "type", "value": ["error", "warn"] },
+    { "field": "message", "value": ["db", "timeout"] },
+    { "field": "time", "value": ["10m"] },
+    { "field": "data.userId", "value": ["123"] },
+    { "field": "order", "value": ["newest-first"] },
+    { "field": "maxcount", "value": 50 },
+    { "field": "nextpage", "value": 18423 }
+  ]
+}
+```
+
+**Cursor pagination flow:**
+
+1. First request: omit `nextpage` (or set `null`).
+2. Server returns `{ "logs": [...], "nextpage": 18423 }`.
+3. Next request: add `{ "field": "nextpage", "op": "eq", "value": 18423 }` to filters.
+4. Repeat until `nextpage` is `null` (no more results).
+
+Encrypted-at-rest rows (**non-empty `iv`**): `message` / `data.*` filters apply after server-side decryption when a project secret is available (backend `**/crypto/decrypt`** via `[project-token-crypto.ts](../src/lib/crypto/project-token-crypto.ts)`; see `[backend-crypto-http.md](infra/frontend/utils/backend-crypto-http.md)`).
+
+---
+
+```
 
 ### Top-level: `runGetLogs`
 
@@ -669,16 +833,16 @@ async function resolveGetLogsAuth(): Promise<{
 }
 ```
 
-**Optimisation:** valid **`AURALOGGER_PROJECT_STYLES`** (or public variants) avoids an extra **`proj_auth`** round-trip.
+**Optimisation:** valid `**AURALOGGER_PROJECT_STYLES`** (or public variants) avoids an extra `**proj_auth**` round-trip.
 
-**Resilience:** if **`proj_auth`** fails, **`get-logs` still proceeds** with **`styles: undefined`** → **`printLog`** uses defaults.
+**Resilience:** if `**proj_auth`** fails, `**get-logs` still proceeds** with `**styles: undefined`** → `**printLog**` uses defaults.
 
 ### Arg parsing → API filter JSON
 
-1. **`parseCommand(argv)`** in **`cli/utility/parser.ts`** — requires **`argv[0] === "get-logs"`** and parses repeated **`-field [--op] <json>`** triples.
-2. **`normalizeAndValidateFilters`** in **`get-logs-filters.ts`** — fills default ops, validates allowed ops, **clamps** **`maxcount`** to **`MAX_MAXCOUNT` (100)** and floors **`skip`** at 0.
+1. `**parseCommand(argv)**` in `**cli/utility/parser.ts**` — requires `**argv[0] === "get-logs"**` and parses repeated `**-field [--op] <json>**` triples.
+2. `**normalizeAndValidateFilters**` in `**get-logs-filters.ts**` — fills default ops, validates allowed ops, **clamps** `**maxcount`** to `**MAX_MAXCOUNT` (100)** and floors `**nextpage`** to an integer.
 
-```56:85:node/src/cli/services/get-logs-filters.ts
+```57:87:node/src/cli/services/get-logs-filters.ts
 export function normalizeAndValidateFilters(parsed: ParsedFilter[]): ApiLogFilter[] {
   return parsed.map((filter) => {
     const defaultOp = defaultOpForField(filter.field);
@@ -698,8 +862,8 @@ export function normalizeAndValidateFilters(parsed: ParsedFilter[]): ApiLogFilte
     if (filter.field === "maxcount" && typeof value === "number") {
       value = Math.min(Math.max(0, Math.floor(value)), MAX_MAXCOUNT);
     }
-    if (filter.field === "skip" && typeof value === "number") {
-      value = Math.max(0, Math.floor(value));
+    if (filter.field === "nextpage" && typeof value === "number") {
+      value = Math.floor(value);
     }
 
     const apiFilter: ApiLogFilter = { field: filter.field, value };
@@ -771,7 +935,7 @@ async function fetchLogsWithFallback(
 }
 ```
 
-**Integration / degradation:** **404** returns **empty logs** with a **yellow warning** instead of throwing — lets operators detect misconfigured **`AURALOGGER_API_URL`** without a stack trace.
+**Integration / degradation:** **404** returns **empty logs** with a **yellow warning** instead of throwing — lets operators detect misconfigured `**AURALOGGER_API_URL`** without a stack trace.
 
 ### Rendering loop
 
@@ -794,7 +958,7 @@ async function fetchLogsWithFallback(
   }
 ```
 
-**Type guard:** only plain objects pass **`isLogRow`**; garbage array entries are skipped silently.
+**Type guard:** only plain objects pass `**isLogRow`**; garbage array entries are skipped silently.
 
 ---
 
@@ -802,12 +966,12 @@ async function fetchLogsWithFallback(
 
 ### Sequence
 
-1. **`loadCliEnvFiles()`**
-2. **`resolveProjectContextForCliChecks()`** → **`proj_auth`** HTTP (see init section)
-3. Build **`wss://…/{encodeURIComponent(token)}/create_log`**
-4. **`ws`** with **`Authorization: Bearer ${userSecret}`**
-5. On **`open`**: build payload with **`session`** from `proj_auth`, microsecond-ish timestamp, **`ws.send`**, **`ws.close`**
-6. **5s** connect timeout → **`ws.terminate()`** + Wolverine aside + error
+1. `**loadCliEnvFiles()**`
+2. `**resolveProjectContextForCliChecks()**` → `**proj_auth**` HTTP (see init section)
+3. Build `**wss://…/{encodeURIComponent(token)}/create_log**`
+4. `**ws**` with `**Authorization: Bearer ${userSecret}**`
+5. On `**open**`: build payload with `**session**` from `proj_auth`, microsecond-ish timestamp, `**ws.send**`, `**ws.close**`
+6. **5s** connect timeout → `**ws.terminate()`** + Wolverine aside + error
 
 ```33:119:node/src/cli/services/server-check.ts
 export async function runServerCheck(): Promise<void> {
@@ -899,19 +1063,96 @@ export async function runServerCheck(): Promise<void> {
   });
 ```
 
-**Payload parity:** mirrors **`AuraServer`** fields (`type`, `message`, `location`, `session`, `created_at`, `data` as **string** JSON).
+**Payload parity:** each log object mirrors `**AuraServer`** fields (`type`, `message`, `location`, `session`, `created_at`, `data` as **string** JSON). On the live SDK path, the WebSocket sends **batches**: a JSON **array** of those objects, not a single object per frame.
 
 ---
 
 ## Flow: `auralogger client-check`
 
-Same **`resolveProjectContextForCliChecks`** for **session** (HTTP still uses user secret path for `proj_auth` — user must have secret in env for this CLI command), but **WebSocket has no Bearer header**.
+```markdown
 
-```36:110:node/src/cli/services/client-check.ts
+### WS `/{proj_token}/create_browser_logs`
+
+Plain-text (unencrypted) WebSocket endpoint for browser/frontend SDKs.
+
+
+|               |                                          |
+| ------------- | ---------------------------------------- |
+| **Protocol**  | WebSocket                                |
+| **Path**      | `/{proj_token:path}/create_browser_logs` |
+| **Auth**      | None (token in path only)                |
+| **Max batch** | 50 items                                 |
+
+
+**Handshake** — server may still hydrate project context via `proj_auth`, but the browser-style socket itself is **path-token only** (no Bearer header, no X25519 key derivation).
+
+**Message format** — JSON array sent by client
+
+```json
+[
+  {
+    "type": "info | warn | error | debug",
+    "session": "<session-id>",
+    "created_at": "ISO-8601 timestamp",
+    "message": "<plain string>",
+    "data": "<plain string or JSON>",
+    "location": "<plain string>"
+  }
+]
+```
+
+**Conditions / validation**
+
+- Same token/project constraints as `create_log`.
+- Fields are stored and published as-is (no decryption step).
+
+**Output** — same Redis publish + list push.
+
+**Flow diagram**
+
+```mermaid
+sequenceDiagram
+    participant C as Browser SDK
+    participant S as This Service
+    participant B as Backend (proj_auth)
+    participant R as Redis
+
+    C->>S: WS connect /{proj_token}/create_browser_logs
+    S->>B: POST /api/{proj_token}/proj_auth
+    B-->>S: {project_id, role, ...}
+    S-->>C: WS accept
+    C->>S: JSON array of plain log objects (≤50)
+    loop for each log
+        S->>R: PUBLISH project_id log_json
+        S->>R: LPUSH logs:{project_id} log_json
+    end
+    R->>R: LTRIM logs:{project_id} 0 999
+```
+
+
+```
+
+CLI `client-check` mirrors this: it only needs a **project token** (env or prompt), hydrates `session` from `proj_auth`, then opens the WS tunnel and sends a **one-item JSON array**.
+
+---
+
+
+
+**CLI sequence:** token → `proj_auth` (no auth header) → WS `/create_browser_logs` (no auth header) → send `[payload]`.
+
+```39:159:node/src/cli/services/client-check.ts
 export async function runClientCheck(): Promise<void> {
   loadCliEnvFiles();
-  const { projectToken, projectId, projectName, session } =
-    await resolveProjectContextForCliChecks();
+  const projectToken = await resolveProjectTokenForInit();
+  const authConfig = await fetchProjAuthConfig(projectToken);
+  const projectId = authConfig.project_id?.trim() ?? "";
+  const projectName = authConfig.project_name?.trim() ?? "";
+  const session = authConfig.session?.trim() ?? "";
+  if (!projectId || !session) {
+    throw new Error(
+      `proj_auth didn't return project_id or session — ${ENV_RECOVERY_HINT_PLAIN}`,
+    );
+  }
 
   const wsUrl = buildClientWsUrl(projectToken);
   console.log(
@@ -924,13 +1165,16 @@ export async function runClientCheck(): Promise<void> {
     const a = pickAside(CLIENT_CHECK_START_PETER_ASIDES);
     printAside(a.emoji, a.line);
   }
-  await new Promise<void>((resolve, reject) => {
-    const ws = new WebSocket(wsUrl);
-    // ... timeout, open handler, send, close, error ...
-  });
+  const sendAttempt = async (): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+      const ws = new WebSocket(wsUrl);
+      // ... timeout, open handler, send JSON.stringify([payload]), close, error ...
+    });
+  // ... retry loop and success banner ...
+}
 ```
 
-**Note:** **`userSecret`** is resolved inside **`resolveProjectContextForCliChecks`** even though **`client-check`** destructuring omits it — ensures **`proj_auth`** can’t be skipped accidentally.
+**Note:** Unlike `server-check`, this path **never** resolves a user secret; it validates `project_id` + `session` from `proj_auth`, then sends over the token-path socket.
 
 ---
 
@@ -938,7 +1182,7 @@ export async function runClientCheck(): Promise<void> {
 
 ### Module-level state (hydration + socket)
 
-Key globals in **`server/server-log.ts`**: **`overrideProjectToken` / `overrideUserSecret`**, **`runtimeProjectId` / `runtimeSession` / `runtimeStyles`**, **`hydrateFromSecretPromise`** (single-flight), **`socket` + `socketUrl`**, **`socketIdleTimer`**, **`consoleOnlyFallback`**.
+Key globals in `**server/server-log.ts**`: `**overrideProjectToken` / `overrideUserSecret**`, `**runtimeProjectId` / `runtimeSession` / `runtimeStyles**`, `**hydrateFromSecretPromise**` (single-flight), `**socket` + `socketUrl**`, `**socketIdleTimer**`, `**bufferedLogs**` + `**flushTimer**` + `**flushInFlight**` (ingest batching), `**localSessionId**` (placeholder session until `proj_auth`).
 
 ### Lazy env load (first log)
 
@@ -957,7 +1201,7 @@ function ensureNodeEnvLoadedOnce(): void {
 
 ### Single-flight `proj_auth` hydration
 
-```62:97:node/src/server/server-log.ts
+```65:118:node/src/server/server-log.ts
 async function ensureHydratedRuntimeConfig(): Promise<void> {
   const projectToken = resolvedProjectToken();
   if (!projectToken) {
@@ -974,7 +1218,25 @@ async function ensureHydratedRuntimeConfig(): Promise<void> {
       if (!token) {
         return;
       }
-      const payload = await fetchProjAuthConfig(token);
+      let payload: InitConfigPayload | null = null;
+      for (let attempt = 1; attempt <= SDK_RETRY_ATTEMPTS; attempt += 1) {
+        try {
+          payload = await fetchProjAuthConfig(token);
+          break;
+        } catch (error: unknown) {
+          if (attempt >= SDK_RETRY_ATTEMPTS) {
+            throw error;
+          }
+          const msg = error instanceof Error ? error.message : String(error);
+          console.warn(
+            `auralogger: proj_auth failed (${msg}); retrying (${attempt + 1}/${SDK_RETRY_ATTEMPTS})...`,
+          );
+          await new Promise((r) => setTimeout(r, SDK_RETRY_DELAY_MS));
+        }
+      }
+      if (!payload) {
+        return;
+      }
       const projectId = payload.project_id?.trim() ?? "";
       const session = payload.session?.trim() ?? "";
       if (!projectId || !session) {
@@ -996,40 +1258,23 @@ async function ensureHydratedRuntimeConfig(): Promise<void> {
 }
 ```
 
-**Optimisation:** concurrent **`AuraServer.log`** calls **share one promise** until settled. **Failure** clears **`hydrateFromSecretPromise`** so a later log can retry.
+**Optimisation:** concurrent `**AuraServer.log`** calls **share one promise** until settled. **Failure** clears `**hydrateFromSecretPromise`** so a later log can retry. **`proj_auth`** is retried up to `**SDK_RETRY_ATTEMPTS**` with `**SDK_RETRY_DELAY_MS**` between attempts.
 
-### `serverHasFullConfig` and console-only fallback
+### Local console echo vs WebSocket ingest
 
-```157:178:node/src/server/server-log.ts
-function serverHasFullConfig(): boolean {
-  if (!resolvedProjectToken() || !resolvedUserSecret()) {
-    return false;
-  }
-  if (!runtimeProjectId) {
-    return false;
-  }
-  if (!runtimeSession) {
-    return false;
-  }
-  return runtimeStyles !== undefined;
-}
+- **Console first:** `**processServerlogAsync**` builds a `**LogPayload**` with `**getOrCreateLocalSession()**` (placeholder `**LOCAL_FALLBACK_SESSION**` until the server session exists), then calls `**printLog**` in a try/catch so the terminal line always has a chance to render even if the network path fails.
+- **Styles:** `**runtimeStyles**` may still be `**undefined**` before hydrate; `**resolveStylesForConsolePrint(runtimeStyles)**` supplies defaults so coloring does not depend on `**proj_auth**` having returned yet.
+- **Ingest gate:** if `**resolvedProjectToken()**` or `**resolvedUserSecret()**` is missing, the function returns **after** printing — no socket, no batch enqueue. Otherwise it `**await**`s `**ensureHydratedRuntimeConfig**`, checks `**runtimeProjectId**` and `**runtimeSession**`, sets `**payload.session = runtimeSession**`, then enqueues for the WebSocket path.
 
-function ensureRuntimeMode(): void {
-  consoleOnlyFallback = !serverHasFullConfig();
-  if (consoleOnlyFallback && !warnedIncompleteEnv) {
-    warnedIncompleteEnv = true;
-    console.error(
-      "auralogger: logging to console only. Set AURALOGGER_PROJECT_TOKEN + AURALOGGER_USER_SECRET, then AuraServer auto-loads project id/session/styles from POST /api/{project_token}/proj_auth on the first log (or call AuraServer.syncFromSecret(projectToken, userSecret)).",
-    );
-  }
-}
-```
+### WebSocket ingest batching
 
-Until **`styles`** is defined (even empty array from payload), **`serverHasFullConfig`** is false — **`InitConfigPayload.styles`** from **`buildConfigPayload`** is always an array, so after successful hydrate, **`runtimeStyles !== undefined`**.
+Constants: `**BATCH_FLUSH_INTERVAL_MS**` (30) and `**BATCH_MAX_SIZE**` (30). Each log line is pushed with `**enqueueLogForBatch**`; reaching max size flushes immediately, otherwise a timer debounces sends. `**flushBufferedLogsNow**` drains `**bufferedLogs**` in chunks of up to `**BATCH_MAX_SIZE**`. The wire payload is `**JSON.stringify(batch)**` where `**batch**` is a **JSON array** of `**LogPayload**` objects — not one object per `**ws.send**`.
 
-### `AuraServer.log` — double deferral
+`**sendServerLogBatch**` / `**sendServerBatch**` handle **OPEN** vs **CONNECTING**, bump the idle timer, and on send failure close the socket, reconnect, and retry once with the same serialized batch. `**AuraServer.closeSocket**` begins with `**await flushBufferedLogsNow()**` so nothing is left in the buffer before shutdown. `**AuraServer.configure**` calls `**resetBufferedLogs()**` so credentials or project changes do not mix payloads across batches.
 
-```459:469:node/src/server/server-log.ts
+### `AuraServer.log` — `deferTask` entry
+
+```551:562:node/src/server/server-log.ts
   static log(type: string, message: string, location?: string, data?: unknown): void {
     ensureNodeEnvLoadedOnce();
     const nowMs = Date.now();
@@ -1044,11 +1289,11 @@ Until **`styles`** is defined (even empty array from payload), **`serverHasFullC
   }
 ```
 
-**Why `deferTask` twice:** outer in **`log`**, inner scheduling of **`printLog`** inside **`processServerlogAsync`** — keeps the public **`log`** API non-blocking and moves heavy work off the synchronous call stack.
+**Why `deferTask`:** keeps the public `**log**` call from blocking the caller’s stack; the async pipeline (`**processServerlogAsync**`, hydrate, flush) runs on the next turn.
 
-### `processServerlogAsync` — local echo then network
+### `processServerlogAsync` — print, hydrate, enqueue batch
 
-```312:405:node/src/server/server-log.ts
+```455:497:node/src/server/server-log.ts
 async function processServerlogAsync(
   type: string,
   message: string,
@@ -1057,21 +1302,11 @@ async function processServerlogAsync(
   data?: unknown,
 ): Promise<void> {
   ensureNodeEnvLoadedOnce();
-  await ensureHydratedRuntimeConfig();
-  ensureRuntimeMode();
-
-  const session = getSession();
-  if (!session) {
-    console.error(
-      "auralogger: missing session after token auth. Check your project token or proj_auth response.",
-    );
-    return;
-  }
 
   const payload: LogPayload = {
     type: normalizeType(type),
     message: String(message ?? ""),
-    session,
+    session: getOrCreateLocalSession(),
     created_at: createIsoTimestampWithMicroseconds(nowMs),
   };
   const normalizedLocation = normalizeLocation(location);
@@ -1083,78 +1318,33 @@ async function processServerlogAsync(
     payload.data = normalizedData;
   }
 
-  deferTask(() => {
-    printLog(payload, resolveStylesForConsolePrint(runtimeStyles));
-  });
-
-  const ws = ensureSocket();
-  if (!ws) {
-    if (!consoleOnlyFallback) {
-      console.error("auralogger: websocket unavailable; log payload:", payload);
-    }
-    return;
-  }
-  if (ws.readyState === WebSocket.OPEN) {
-    bumpSocketIdleTimer(ws);
-  }
-
-  let sendPayload = "";
   try {
-    sendPayload = JSON.stringify(payload);
+    printLog(payload, resolveStylesForConsolePrint(runtimeStyles));
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
-    console.error(`auralogger: failed to serialize log payload: ${errMsg}`);
-    console.error("auralogger: failed payload:", payload);
-    return;
+    console.error(`auralogger: failed to print log: ${errMsg}`);
   }
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(sendPayload, (error?: Error) => {
-      if (!error) {
-        return;
-      }
-      const sendErr = error?.message || String(error);
-      console.error(`auralogger: websocket send failed: ${sendErr}`);
-      console.error("auralogger: failed payload:", payload);
-    });
+
+  if (!resolvedProjectToken() || !resolvedUserSecret()) {
     return;
   }
 
-  if (ws.readyState === WebSocket.CONNECTING) {
-    ws.once("open", () => {
-      bumpSocketIdleTimer(ws);
-      ws.send(sendPayload, (error?: Error) => {
-        if (!error) {
-          return;
-        }
-        const sendErr = error?.message || String(error);
-        console.error(`auralogger: websocket send failed: ${sendErr}`);
-        console.error("auralogger: failed payload:", payload);
-      });
-    });
-    ws.once("error", () => {
-      if (!consoleOnlyFallback) {
-        console.error("auralogger: websocket unavailable; log payload:", payload);
-      }
-    });
+  await ensureHydratedRuntimeConfig();
+  if (!runtimeProjectId || !runtimeSession) {
     return;
   }
 
-  if (!consoleOnlyFallback) {
-    console.error("auralogger: websocket unavailable; log payload:", payload);
-  }
+  payload.session = runtimeSession;
+  enqueueLogForBatch(payload);
 }
 ```
 
-**`maybeData`:** only **plain objects** stringify; primitives other than string are dropped (strings pass through). **Non-plain** objects won’t be sent as `data`.
+`**maybeData`:** only **plain objects** stringify; primitives other than string are dropped (strings pass through). **Non-plain** objects won’t be sent as `data`.
 
 ### `ensureSocket` — reuse + idle timer
 
-```276:310:node/src/server/server-log.ts
+```280:310:node/src/server/server-log.ts
 function ensureSocket(): WebSocket | null {
-  if (consoleOnlyFallback) {
-    return null;
-  }
-
   const projectToken = getProjectToken();
   if (!projectToken) {
     console.error(
@@ -1191,8 +1381,8 @@ function ensureSocket(): WebSocket | null {
 
 ### `AuraServer.configure` vs `syncFromSecret`
 
-- **`configure`**: sets overrides, clears hydrated cache, starts **new** background **`hydrateFromSecretPromise`** (fire-and-forget).
-- **`syncFromSecret`**: **`await fetchProjAuthConfig`** synchronously for callers that need strict readiness.
+- `**configure`**: sets overrides, clears hydrated cache, `**resetBufferedLogs()**`, starts **new** background `**hydrateFromSecretPromise`** (fire-and-forget).
+- `**syncFromSecret**`: `**await fetchProjAuthConfig**` synchronously for callers that need strict readiness.
 
 ---
 
@@ -1200,7 +1390,7 @@ function ensureSocket(): WebSocket | null {
 
 ### Separate `fetchProjAuthConfig` (duplicated contract)
 
-`client/client-log.ts` implements its **own** `fetch` to **`buildProjAuthUrl`** + **`parseErrorBody`**, then **`buildStyleEntriesFromProjAuth`** on styles — **same wire shape** as CLI init, **no import** of `cli/services/init` (keeps browser bundle free of CLI readline paths).
+`client/client-log.ts` implements its **own** `fetch` to `**buildProjAuthUrl`** + `**parseErrorBody**`, then `**buildStyleEntriesFromProjAuth**` on styles — **same wire shape** as CLI init, **no import** of `cli/services/init` (keeps browser bundle free of CLI readline paths).
 
 ```145:178:node/src/client/client-log.ts
 async function fetchProjAuthConfig(projectToken: string): Promise<{
@@ -1241,7 +1431,11 @@ async function fetchProjAuthConfig(projectToken: string): Promise<{
 
 ### Hydration gate for WebSocket
 
-`ensureSocket` **awaits** **`ensureHydratedRuntimeConfig`** and requires **`projectId`** before opening **`create_browser_logs`**. **`getSession()`** falls back to **`auralogger-local-session`** if runtime session missing — **local echo still runs** via **`printLog`** even when socket path fails early.
+`ensureSocket` **awaits** `**ensureHydratedRuntimeConfig`** and requires `**projectId**` before opening `**create_browser_logs**`. `**getSession()**` falls back to `**auralogger-local-session**` if runtime session missing — **local echo still runs** via `**printLog`** even when socket path fails early.
+
+### Ingest batching (same model as `AuraServer`)
+
+`**client-log.ts**` uses the same `**BATCH_FLUSH_INTERVAL_MS**` / `**BATCH_MAX_SIZE**` pattern: `**enqueueLogForBatch**`, `**flushBufferedLogsNow**`, and a JSON **array** per send on the browser log socket. `**AuraClient.configure**` calls `**resetBufferedLogs()**`; `**AuraClient.closeSocket**` awaits `**flushBufferedLogsNow()**` first.
 
 ### Dual WebSocket implementations — `sendPayloadOverSocket` / `socketOnce`
 
@@ -1274,11 +1468,11 @@ function sendPayloadOverSocket(
 }
 ```
 
-**Integration:** Node **`ws`** uses callback form of **`send`**; browser **`WebSocket`** uses sync send — errors surface via try/catch only.
+**Integration:** Node `**ws`** uses callback form of `**send**`; browser `**WebSocket**` uses sync send — errors surface via try/catch only.
 
 ### `AuraClient.configure` accepts string or `{ projectToken }`
 
-```526:546:node/src/client/client-log.ts
+```680:697:node/src/client/client-log.ts
 export class AuraClient {
   /**
    * @param projectToken Project token string, or `{ projectToken }` (object form is accepted for convenience).
@@ -1296,6 +1490,7 @@ export class AuraClient {
     overrideProjectToken = token;
     hydrateFromSecretPromise = null;
     clearHydratedRuntimeConfig();
+    resetBufferedLogs();
     localSessionId = null;
     warnedMissingProjectToken = false;
     warnedMissingProjectId = false;
@@ -1348,7 +1543,7 @@ export async function runTestServerlog(): Promise<void> {
 }
 ```
 
-**Integration:** imports **`AuraServer`** from **`../../server/server-log`** — **not** the `server.ts` barrel, but equivalent at runtime after build.
+**Integration:** imports `**AuraServer`** from `**../../server/server-log**` — **not** the `server.ts` barrel, but equivalent at runtime after build.
 
 ### `test-clientlog` — polyfill global `WebSocket` with `ws`
 
@@ -1397,7 +1592,7 @@ export async function runTestClientlog(): Promise<void> {
 }
 ```
 
-**Why:** **`AuraClient`** uses **`globalThis.WebSocket`**; Node without global polyfill needs **`ws`** assigned.
+**Why:** `**AuraClient`** uses `**globalThis.WebSocket**`; Node without global polyfill needs `**ws**` assigned.
 
 ---
 
@@ -1433,35 +1628,38 @@ main().catch((error: unknown) => {
 });
 ```
 
-**Integration:** **`aside-pools`**, **`cli-tone`**, **`cli-personality-state`** cooperate for adaptive copy; **not** used by SDK **`console.error`** paths.
+**Integration:** `**aside-pools`**, `**cli-tone**`, `**cli-personality-state**` cooperate for adaptive copy; **not** used by SDK `**console.error`** paths.
 
 ---
 
 ## When you add a command or SDK surface
 
-1. Add token to **`KNOWN_COMMANDS`** and a branch in **`main()`** (`cli/bin/auralogger.ts`).
-2. Decide **HTTP vs WS** and **credential model**; extend **[`routes.md`](routes.md)** and **[`api-urls.md`](api-urls.md)**.
-3. If you add new shared wire helpers, document them here and in **[`file-map.md`](file-map.md)**.
-4. If behaviour is user-visible, extend **[`bdd.md`](bdd.md)**.
-5. For **browser/Node split**, update **`package.json` `exports`** and add/extend **`.browser.ts` stubs** if native modules would otherwise leak into client bundles.
+1. Add token to `**KNOWN_COMMANDS**` and a branch in `**main()**` (`cli/bin/auralogger.ts`).
+2. Decide **HTTP vs WS** and **credential model**; extend `**[routes.md](routes.md)`** and `**[api-urls.md](api-urls.md)**`.
+3. If you add new shared wire helpers, document them here and in `**[file-map.md](file-map.md)**`.
+4. If behaviour is user-visible, extend `**[bdd.md](bdd.md)**`.
+5. For **browser/Node split**, update `**package.json` `exports`** and add/extend `**.browser.ts` stubs** if native modules would otherwise leak into client bundles.
 
 ---
 
 ## Quick reference — optimisation checklist
 
-| Mechanism | Where | What it saves / improves |
-|-----------|--------|----------------------------|
-| `DOTENV_CONFIG_QUIET` | `quiet-dotenv-first.ts`, `cli-load-env.ts` | Quieter CLI |
-| `KNOWN_COMMANDS` Set | `auralogger.ts` | O(1) command validation |
-| Init “already configured” fast path | `init.ts` | Skips `proj_auth` HTTP |
-| `tryParseResolvedStyles` short-circuit | `get-logs.ts` | Skips `proj_auth` for colours only |
-| `hydrateFromSecretPromise` single-flight | `server-log.ts`, `client-log.ts` | One concurrent `proj_auth` per process |
-| WebSocket reuse (same URL + open/connecting) | `server-log.ts`, `client-log.ts` | Fewer handshakes |
-| `DEFAULT_SOCKET_IDLE_CLOSE_MS` | `socket-idle-close.ts` | Closes idle ingest sockets |
-| `deferTask` / `setImmediate` | `server-log.ts`, `client-log.ts` | Non-blocking log API |
-| `get-logs` 404 soft empty | `get-logs.ts` | Graceful mis-host detection |
-| `maxcount` clamp | `get-logs-filters.ts` | Bounded API requests |
-| `printLog` try/catch | `log-print.ts` | Style failures don’t crash printing |
+
+| Mechanism                                    | Where                                      | What it saves / improves               |
+| -------------------------------------------- | ------------------------------------------ | -------------------------------------- |
+| `DOTENV_CONFIG_QUIET`                        | `quiet-dotenv-first.ts`, `cli-load-env.ts` | Quieter CLI                            |
+| `KNOWN_COMMANDS` Set                         | `auralogger.ts`                            | O(1) command validation                |
+| Init “already configured” fast path          | `init.ts`                                  | Skips `proj_auth` HTTP                 |
+| `tryParseResolvedStyles` short-circuit       | `get-logs.ts`                              | Skips `proj_auth` for colours only     |
+| `hydrateFromSecretPromise` single-flight     | `server-log.ts`, `client-log.ts`           | One concurrent `proj_auth` per process |
+| WebSocket reuse (same URL + open/connecting) | `server-log.ts`, `client-log.ts`           | Fewer handshakes                       |
+| `DEFAULT_SOCKET_IDLE_CLOSE_MS`               | `socket-idle-close.ts`                     | Closes idle ingest sockets             |
+| `deferTask` / `setImmediate`                 | `server-log.ts`, `client-log.ts`           | Non-blocking log API                   |
+| Ingest batching (`BATCH_MAX_SIZE` / flush interval) | `server-log.ts`, `client-log.ts`    | Fewer WS frames; array payload per send |
+| `get-logs` 404 soft empty                    | `get-logs.ts`                              | Graceful mis-host detection            |
+| `maxcount` clamp                             | `get-logs-filters.ts`                      | Bounded API requests                   |
+| `printLog` try/catch                         | `log-print.ts`                             | Style failures don’t crash printing    |
+
 
 ---
 

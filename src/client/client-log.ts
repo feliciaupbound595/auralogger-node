@@ -709,6 +709,16 @@ export class AuraClient {
   }
 
   static async closeSocket(timeoutMs = 1000): Promise<void> {
+    // Drain any pending deferTask callbacks so log() calls made just before
+    // closeSocket() have a chance to enqueue their payloads.
+    await new Promise<void>((resolve) => deferTask(resolve));
+    // If proj_auth hydration is still in flight, wait for it so that
+    // processClientlogAsync continuations can finish enqueuing.
+    if (hydrateFromSecretPromise) {
+      try { await hydrateFromSecretPromise; } catch { /* ignore */ }
+    }
+    // One more tick to let any async continuations unblocked by hydration enqueue.
+    await new Promise<void>((resolve) => deferTask(resolve));
     await flushBufferedLogsNow();
     clearSocketIdleTimer();
     if (!socket) {

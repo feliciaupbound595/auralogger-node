@@ -13,7 +13,7 @@ function defaultOpForField(field: string): string {
   if (field.startsWith("data.")) {
     return "eq";
   }
-  if (field === "order" || field === "maxcount" || field === "skip" || field === "session") {
+  if (field === "order" || field === "maxcount" || field === "nextpage" || field === "session") {
     return "eq";
   }
   if (field === "message") {
@@ -46,7 +46,7 @@ function allowedOpsForField(field: string): string[] {
       return ["since", "from-to"];
     case "order":
     case "maxcount":
-    case "skip":
+    case "nextpage":
     case "session":
       return ["eq"];
     default:
@@ -73,8 +73,8 @@ export function normalizeAndValidateFilters(parsed: ParsedFilter[]): ApiLogFilte
     if (filter.field === "maxcount" && typeof value === "number") {
       value = Math.min(Math.max(0, Math.floor(value)), MAX_MAXCOUNT);
     }
-    if (filter.field === "skip" && typeof value === "number") {
-      value = Math.max(0, Math.floor(value));
+    if (filter.field === "nextpage" && typeof value === "number") {
+      value = Math.floor(value);
     }
 
     const apiFilter: ApiLogFilter = { field: filter.field, value };

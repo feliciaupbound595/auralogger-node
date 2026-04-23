@@ -11,7 +11,7 @@ import {
 } from "../utility/aside-pools";
 import { loadCliEnvFiles } from "../utility/cli-load-env";
 import { maybePrintGenericSpice, printAside } from "../utility/cli-tone";
-import { resolveProjectContextForCliChecks } from "./init";
+import { fetchProjAuthConfig, resolveProjectTokenForInit } from "./init";
 
 const CONNECT_TIMEOUT_MS = 5000;
 const MAX_RETRIES = 2;
@@ -33,13 +33,21 @@ function createIsoTimestampWithMicroseconds(epochMs: number): string {
 }
 
 /**
- * Same auth path as `server-check`: project token (env or prompt) + `proj_auth`
- * for session hydration. Browser ingest is path-only auth via `{proj_token}`.
+ * Browser ingest path: project token only — no user secret required.
+ * Session is hydrated from proj_auth (unauthenticated); WS connects via path token.
  */
 export async function runClientCheck(): Promise<void> {
   loadCliEnvFiles();
-  const { projectToken, projectId, projectName, session } =
-    await resolveProjectContextForCliChecks();
+  const projectToken = await resolveProjectTokenForInit();
+  const authConfig = await fetchProjAuthConfig(projectToken);
+  const projectId = authConfig.project_id?.trim() ?? "";
+  const projectName = authConfig.project_name?.trim() ?? "";
+  const session = authConfig.session?.trim() ?? "";
+  if (!projectId || !session) {
+    throw new Error(
+      `proj_auth didn't return project_id or session — ${ENV_RECOVERY_HINT_PLAIN}`,
+    );
+  }
 
   const wsUrl = buildClientWsUrl(projectToken);
   console.log(
@@ -81,7 +89,7 @@ export async function runClientCheck(): Promise<void> {
 
       let sendPayload = "";
       try {
-        sendPayload = JSON.stringify(payload);
+        sendPayload = JSON.stringify([payload]);
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         ws.close();

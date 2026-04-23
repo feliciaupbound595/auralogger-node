@@ -3,6 +3,7 @@ import chalk from "chalk";
 
 import { AuraClient } from "../../client/client-log";
 import { AuraServer } from "../../server/server-log";
+import { auralogger } from "../..";
 import {
   pickAside,
   pickTestServerlogSuccessAside,
@@ -94,6 +95,53 @@ export async function runTestClientlog(): Promise<void> {
   console.log(
     chalk.green("✅ ") +
       chalk.white("Client burst sent. Spy with ") +
+      chalk.hex("#79c0ff")("auralogger get-logs -maxcount 20") +
+      chalk.white(" when curious."),
+  );
+  {
+    const a = pickAside(TEST_CLIENTLOG_SUCCESS_ASIDES);
+    printAside(a.emoji, a.line);
+  }
+  maybePrintGenericSpice();
+}
+
+export async function runTestLog(): Promise<void> {
+  const root = globalThis as typeof globalThis & { WebSocket?: unknown };
+  if (typeof root.WebSocket !== "function") {
+    (root as { WebSocket: typeof WebSocket }).WebSocket = WebSocket;
+  }
+
+  console.log(
+    chalk.bold.hex("#79c0ff")("🧪 ") +
+      chalk.white("Firing the ") +
+      chalk.bold.white("index") +
+      chalk.white(" auralogger client — 5 test logs, browser flavor."),
+  );
+  console.log(chalk.dim("   (Uses the package index export; hits the no-auth browser socket.)"));
+  {
+    const a = pickAside(TEST_CLIENTLOG_START_ASIDES);
+    printAside(a.emoji, a.line);
+  }
+  console.log("");
+
+  const logs: Array<Parameters<typeof auralogger.log>> = [
+    ["info",  "test-log suite started",                       "cli/test-log", { source: "auralogger-cli", env: "test" }],
+    ["warn",  "localStorage quota nearing limit",             "cli/test-log", { usedKB: 4800, limitKB: 5120 }],
+    ["error", "unhandled promise rejection in fetch",         "cli/test-log", { url: "/api/data", reason: "NetworkError: Failed to fetch" }],
+    ["debug", "component render cycle complete",              "cli/test-log", { component: "Dashboard", renderMs: 34, props: { userId: "usr_7" } }],
+    ["info",  "test-log suite finished",                      "cli/test-log", { logsEmitted: 5 }],
+  ];
+  for (const args of logs) {
+    auralogger.log(...args);
+    await sleep(150);
+  }
+
+  await sleep(800);
+  await auralogger.closeSocket(3000);
+  console.log("");
+  console.log(
+    chalk.green("✅ ") +
+      chalk.white("Index client burst sent. Spy with ") +
       chalk.hex("#79c0ff")("auralogger get-logs -maxcount 20") +
       chalk.white(" when curious."),
   );

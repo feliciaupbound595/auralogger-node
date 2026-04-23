@@ -41,10 +41,18 @@ import type { ProjAuthConfigPayload } from "../utility/log-styles";
 
 interface ProjAuthResponse {
   project_id?: string | null;
+  name?: string | null;
+  // Back-compat: older API shape used project_name.
   project_name?: string | null;
+  role?: string | null;
+  iv?: string | null;
+  user_name?: string | null;
+  owner_key?: string | null;
+  plan?: string | null;
   session?: string | null;
   styles?: unknown;
-  encrypted?: boolean | null;
+  // PostgREST may return boolean true or the string 'true'.
+  encrypted?: boolean | string | null;
   // Back-compat: some deployments/store layers misspelled this as `encryption`.
   encryption?: boolean | null;
 }
@@ -118,14 +126,12 @@ function buildConfigPayload(
   authResponse: ProjAuthResponse,
   projectToken: string,
 ): InitConfigPayload {
-  const encrypted =
-    authResponse.encrypted ??
-    authResponse.encryption ??
-    true;
+  const rawEncrypted = authResponse.encrypted ?? authResponse.encryption ?? true;
+  const encrypted = rawEncrypted === true || rawEncrypted === "true";
   return {
     project_token: projectToken,
     project_id: authResponse.project_id ?? null,
-    project_name: authResponse.project_name ?? null,
+    project_name: authResponse.name ?? authResponse.project_name ?? null,
     session: authResponse.session ?? null,
     styles: buildStyleEntriesFromProjAuth(authResponse.styles),
     encrypted,

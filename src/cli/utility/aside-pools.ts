@@ -440,22 +440,22 @@ export const PROMPT_MISSING_CREDENTIAL_TEMPLATES: readonly AsideEntry[] = [
   {
     emoji: "🦾",
     line:
-      "Tony: No {{envKey}} in env — paste next, then slam it in .env or run npx auralogger init. Server-check will love you.",
+      "Tony: Missing {{envKey}} — paste it, save it in .env (or run init), then rerun.",
   },
   {
     emoji: "🕷️",
     line:
-      "Peter: {{envKey}} ghosted us — paste below, .env or init, future-you says thanks.",
+      "Peter: {{envKey}} ghosted us — paste it, save it, move on.",
   },
   {
     emoji: "💀",
     line:
-      "Deadpool: {{envKey}} MIA — type it, cage it in .env, or init holds your hand. I'm not HR.",
+      "Deadpool: {{envKey}} is missing — paste it into .env, or run init and let it babysit you.",
   },
   {
     emoji: "🐺",
     line:
-      "Wolverine: {{envKey}} missing — you knew this'd prompt. .env or init, then rerun.",
+      "Wolverine: {{envKey}} missing — fix .env (or run init), then rerun.",
   },
 ];
 
@@ -657,7 +657,7 @@ export const SERVER_CHECK_OPEN_ASIDES: readonly AsideEntry[] = [
   {
     emoji: "🦾",
     line:
-      "Tony: Pinging server socket — secret in Authorization, token in path. Relax unless it times out.",
+      "Tony: Opening the pipe—secret stays server-side, token rides the URL, don't panic unless it stalls.",
   },
   {
     emoji: "🐺",
@@ -695,7 +695,7 @@ export const SERVER_CHECK_FAIL_WOLVERINE_ASIDES: readonly AsideEntry[] = [
 export const CHECK_RETRY_ASIDES: readonly AsideEntry[] = [
   {
     emoji: "🦾",
-    line: "Tony: Transient failures happen. Retry before we start dramatic monologues.",
+    line: "Tony: Glitches happen—hit retry before the speeches.",
   },
   {
     emoji: "💀",
@@ -718,7 +718,7 @@ export const CLIENT_CHECK_START_PETER_ASIDES: readonly AsideEntry[] = [
   {
     emoji: "🕷️",
     line:
-      "Peter: Browser-style tunnel — path has the project token, no Bearer header (that's intentional). Matches how a real tab talks to Auralogger.",
+      "Peter: Browser tunnel—token in the URL, no Bearer, just like a real tab.",
   },
 ];
 
