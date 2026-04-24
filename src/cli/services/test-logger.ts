@@ -2,7 +2,7 @@ import chalk from "chalk";
 
 import { AuraClient } from "../../client/client-log";
 import { AuraServer } from "../../server/server-log";
-import { Auralogger } from "../..";
+import { AuraClient as RootAuraClient } from "../..";
 import {
   pickAside,
   pickTestServerlogSuccessAside,
@@ -120,7 +120,7 @@ export async function runTestLog(): Promise<void> {
     chalk.bold.hex("#79c0ff")("🧪 ") +
       chalk.white("Firing the ") +
       chalk.bold.white("index") +
-      chalk.white(" Auralogger client — 5 test logs, browser flavor."),
+      chalk.white(" AuraClient export — 5 test logs, browser flavor."),
   );
   {
     const a = pickAside(TEST_CLIENTLOG_START_ASIDES);
@@ -129,9 +129,9 @@ export async function runTestLog(): Promise<void> {
   console.log("");
 
   ensureCliEnv();
-  Auralogger.configure(getResolvedProjectToken() ?? "");
+  RootAuraClient.configure(getResolvedProjectToken() ?? "");
 
-  const logs: Array<Parameters<typeof Auralogger.log>> = [
+  const logs: Array<Parameters<typeof RootAuraClient.log>> = [
     ["info",  "test-log suite started",                       "cli/test-log", { source: "auralogger-cli", env: "test" }],
     ["warn",  "localStorage quota nearing limit",             "cli/test-log", { usedKB: 4800, limitKB: 5120 }],
     ["error", "unhandled promise rejection in fetch",         "cli/test-log", { url: "/api/data", reason: "NetworkError: Failed to fetch" }],
@@ -139,12 +139,12 @@ export async function runTestLog(): Promise<void> {
     ["info",  "test-log suite finished",                      "cli/test-log", { logsEmitted: 5 }],
   ];
   for (const args of logs) {
-    Auralogger.log(...args);
+    RootAuraClient.log(...args);
     await sleep(150);
   }
 
   await sleep(800);
-  await Auralogger.closeSocket(3000);
+  await RootAuraClient.closeSocket(3000);
   console.log("");
   console.log(
     chalk.green("✅ ") +

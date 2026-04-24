@@ -198,7 +198,7 @@ function isPlainAuthResponse(value: unknown): value is ProjAuthResponse {
 
 function buildAuraClientWrapperSnippet(): string {
   return [
-    `import { AuraClient } from 'auralogger-cli/client'`,
+    `import { AuraClient } from 'auralogger-cli'`,
     ``,
     ``,
     `let configured = false`,
@@ -226,29 +226,48 @@ function buildAuraClientWrapperSnippet(): string {
   ].join("\n");
 }
 
-function buildAuraServerWrapperSnippet(): string {
+function buildAuraServerWrapperSnippet(encrypted: boolean): string {
+  const serverConfigureBlock = encrypted
+    ? [
+        `  // You can also pass string literals to AuraServer.configure(...) instead of process.env (never commit real secrets).`,
+        `  const projectToken = process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN || process.env.VITE_AURALOGGER_PROJECT_TOKEN || process.env.AURALOGGER_PROJECT_TOKEN`,
+        `  const userSecret = process.env.${ENV_USER_SECRET} || ''`,
+        `  if (projectToken && userSecret) {`,
+        `    AuraServer.configure(projectToken, userSecret)`,
+        `  } else {`,
+        `    console.warn('[Auralogger] Missing server credentials env; local-only logging enabled.')`,
+        `    AuraServer.configure(projectToken || '', userSecret)`,
+        `  }`,
+      ]
+    : [
+        `  // Non-encrypted flow: AuraServer.configure(projectToken) uses create_browser_logs with no user secret.`,
+        `  const projectToken = process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN || process.env.VITE_AURALOGGER_PROJECT_TOKEN || process.env.AURALOGGER_PROJECT_TOKEN`,
+        `  if (projectToken) {`,
+        `    AuraServer.configure(projectToken)`,
+        `  } else {`,
+        `    console.warn('[Auralogger] Missing project token env; local-only logging enabled.')`,
+        `    AuraServer.configure('')`,
+        `  }`,
+      ];
+
+  const serverDoc = encrypted
+    ? `/** Server-only: uses project token + user secret from env. Do not import from client components. */`
+    : `/** Server-only: uses project token only (non-encrypted flow). Do not import from client components. */`;
+
   return [
-    `import { AuraServer } from 'auralogger-cli/server'`,
+    `import { AuraServer } from 'auralogger-cli'`,
     ``,
     `let configured = false`,
     ``,
     `function ensureConfigured(): void {`,
     `  if (configured) return`,
     ``,
-    `  // You can also pass string literals to AuraServer.configure(...) instead of process.env (never commit real secrets).`,
-    `  const projectToken = process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN || process.env.VITE_AURALOGGER_PROJECT_TOKEN || process.env.AURALOGGER_PROJECT_TOKEN`,
-    `  const userSecret = process.env.${ENV_USER_SECRET} || ''`,
-    `  if (projectToken && userSecret) {`,
-    `    AuraServer.configure(projectToken, userSecret)`,
-    `  } else {`,
-    `    console.warn('[Auralogger] Missing server credentials env; local-only logging enabled.')`,
-    `    AuraServer.configure(projectToken || '', userSecret)`,
-    `  }`,
+    ...serverConfigureBlock,
     `  // AuraServer.configure(); // console-only logs to avoid network overhead and costs (use in production).`,
     `  configured = true`,
     `}`,
     ``,
-    `/** Server-only: uses project token + user secret from env. Do not import from client components. */`,
+    serverDoc,
     `export function AuraLog(type: string, message: string, location?: string, data?: unknown): void {`,
     `  ensureConfigured()`,
     `  AuraServer.log(type, message, location, data)`,
@@ -286,52 +305,7 @@ function buildAuraServerUsageSnippet(): string {
   ].join("\n");
 }
 
-function buildAuraLoggerWrapperSnippet(): string {
-  return [
-    `import { Auralogger } from 'auralogger-cli'`,
-    ``,
-    ``,
-    `let configured = false`,
-    ``,
-    `function ensureConfigured(): void {`,
-    `  if (configured) return`,
-    ``,
-    `  // Auralogger.configure() only needs the project token — no user secret required.`,
-    `  // You can also use hardcoded strings instead of env lookups below (avoid committing real values).`,
-    `  const projectToken = process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN || process.env.VITE_AURALOGGER_PROJECT_TOKEN || process.env.AURALOGGER_PROJECT_TOKEN`,
-    `  if (projectToken) {`,
-    `    Auralogger.configure(projectToken)`,
-    `  } else {`,
-    `    console.warn('[Auralogger] Missing project token env; local-only logging enabled.')`,
-    `    Auralogger.configure('')`,
-    `  }`,
-    `  configured = true`,
-    `}`,
-    ``,
-    `/** Centralized logger — works anywhere, no client/server split needed. */`,
-    `export function AuraLog(type: string, message: string, location?: string, data?: unknown): void {`,
-    `  ensureConfigured()`,
-    `  Auralogger.log(type, message, location, data)`,
-    `}`,
-  ].join("\n");
-}
-
-function buildAuraLoggerUsageSnippet(): string {
-  return [
-    `import { AuraLog } from '@/lib/auralog/auralog'`,
-    ``,
-    `AuraLog('info', 'Request completed', 'src/app/api/orders/route.ts', { order_id: 'ord_123', status: 201 })`,
-    `// expected: [info] Request completed @ src/app/api/orders/route.ts { order_id: 'ord_123', status: 201 }`,
-    ``,
-    `AuraLog('warn', 'Cache miss')`,
-    `// expected: [warn] Cache miss`,
-    ``,
-    `AuraLog('error', 'Payment gateway timeout', undefined, { provider: 'stripe' })`,
-    `// expected: [error] Payment gateway timeout { provider: 'stripe' }`,
-  ].join("\n");
-}
-
-function printTwoAuralogExplainer(): void {
+function printTwoAuralogExplainer(encrypted: boolean): void {
   console.log("");
   console.log(
     chalk.bold.hex("#d2a8ff")("  🧭 ") +
@@ -357,19 +331,21 @@ function printTwoAuralogExplainer(): void {
       chalk.hex("#79c0ff")("🧱 ") +
       chalk.bold.white("Server / backend / CLI") +
       chalk.gray(" — APIs, workers, scripts, anything that never touches a phone screen. ") +
-      chalk.white("User secret only lives here."),
+      (encrypted
+        ? chalk.white("User secret only lives here.")
+        : chalk.white("No user secret needed in non-encrypted mode.")),
   );
   console.log("");
 }
 
 /** Client + server snippets with the loud personality pass (init + already-configured paths). */
-function printInitHelperSnippetsWithCharacterVoices(): void {
+function printInitHelperSnippetsWithCharacterVoices(encrypted: boolean): void {
   {
     const a = pickAside(INIT_SNIPPET_PETER_ASIDES);
     printAside(a.emoji, a.line);
   }
   printCodeStory(
-    "Client-side Auralog — auralogger-cli/client",
+    "Client-side Auralog — auralogger-cli (AuraClient)",
     buildAuraClientWrapperSnippet(),
   );
   printCodeStory(
@@ -389,52 +365,13 @@ function printInitHelperSnippetsWithCharacterVoices(): void {
     printAside(a.emoji, a.line);
   }
   printCodeStory(
-    "Server-side AuraLog — auralogger-cli/server",
-    buildAuraServerWrapperSnippet(),
+    "Server-side AuraLog — auralogger-cli (AuraServer)",
+    buildAuraServerWrapperSnippet(encrypted),
   );
   printCodeStory(
     "Using your generated AuraLog helper (server example logs)",
     buildAuraServerUsageSnippet(),
   );
-}
-
-function printSingleAuralogExplainer(): void {
-  console.log("");
-  console.log(
-    chalk.bold.hex("#d2a8ff")("  🧭 ") +
-      chalk.white("No encryption — ") +
-      chalk.bold.white("one centralized logger") +
-      chalk.white(" for everywhere. Import ") +
-      chalk.bold.white("auralogger") +
-      chalk.white(" directly from ") +
-      chalk.bold.white("auralogger-cli") 
-  );
-  console.log(
-    chalk.gray("     ") +
-      chalk.hex("#ffa657")("⚡ ") +
-      chalk.gray("Works in browser, server, scripts, APIs — same import everywhere. ") +
-      chalk.dim("Project token only — no user secret."),
-  );
-  console.log("");
-}
-
-function printInitHelperSnippetsNoEncryption(): void {
-  {
-    const a = pickAside(INIT_SNIPPET_PETER_ASIDES);
-    printAside(a.emoji, a.line);
-  }
-  printCodeStory(
-    "Centralized AuraLog — import auralogger from 'auralogger-cli'",
-    buildAuraLoggerWrapperSnippet(),
-  );
-  printCodeStory(
-    "Using your generated AuraLog helper (example logs)",
-    buildAuraLoggerUsageSnippet(),
-  );
-  {
-    const a = pickAside(INIT_SNIPPET_DEADPOOL_ASIDES);
-    printAside(a.emoji, a.line);
-  }
 }
 
 function styleInitCodeLine(line: string): string {
@@ -588,8 +525,8 @@ function printPostInitSummary(
   );
 
   if (payload.encrypted) {
-    printTwoAuralogExplainer();
-    printInitHelperSnippetsWithCharacterVoices();
+    printTwoAuralogExplainer(true);
+    printInitHelperSnippetsWithCharacterVoices(true);
     console.log(
       chalk.bold.hex("#f85149")("🙅 ") +
         chalk.white("Never put ") +
@@ -604,8 +541,8 @@ function printPostInitSummary(
         chalk.gray(" Auralog file reads only the publishable project token from env."),
     );
   } else {
-    printSingleAuralogExplainer();
-    printInitHelperSnippetsNoEncryption();
+    printTwoAuralogExplainer(false);
+    printInitHelperSnippetsWithCharacterVoices(false);
   }
   console.log("");
 }
@@ -629,11 +566,11 @@ function printAlreadyConfiguredSuccess(encrypted: boolean): void {
   }
   console.log("");
   if (encrypted) {
-    printTwoAuralogExplainer();
-    printInitHelperSnippetsWithCharacterVoices();
+    printTwoAuralogExplainer(true);
+    printInitHelperSnippetsWithCharacterVoices(true);
   } else {
-    printSingleAuralogExplainer();
-    printInitHelperSnippetsNoEncryption();
+    printTwoAuralogExplainer(false);
+    printInitHelperSnippetsWithCharacterVoices(false);
   }
   {
     const a = pickAside(INIT_ALREADY_LOKI_ASIDES);

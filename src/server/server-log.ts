@@ -28,6 +28,7 @@ interface LogPayload {
 
 let projectToken: string | null = null;
 let userSecret: string | null = null;
+let encrypted = true;
 let session: string | null = null;
 let styles: ProjAuthConfigPayload["styles"] | undefined = undefined;
 let projAuthPromise: Promise<boolean> | null = null;
@@ -39,7 +40,6 @@ let socketIdleTimer: ReturnType<typeof setTimeout> | null = null;
 let batch: LogPayload[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight = false;
-let warnedMissingUserSecret = false;
 let sendGivenUp = false;
 
 const deferTask =
@@ -162,18 +162,13 @@ function resetBatchState(): void {
 
 function openSocketIfNeeded(): WebSocket | null {
   if (!projectToken) return null;
-  if (!userSecret) {
-    if (!warnedMissingUserSecret) {
-      warnedMissingUserSecret = true;
-      console.error(
-        "auralogger: missing user secret. Call AuraServer.configure(projectToken, userSecret) before logging.",
-      );
-      trace("socket.missing_user_secret");
-    }
-    return null;
-  }
-  const url = `${resolveWsBaseUrl()}/${encodeURIComponent(projectToken)}/create_log`;
-  if (socket && socketUrl === url && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+  const route = encrypted ? "create_log" : "create_browser_logs";
+  const finalUrl = `${resolveWsBaseUrl()}/${projectToken}/${route}`;
+  if (
+    socket &&
+    socketUrl === finalUrl &&
+    (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
+  ) {
     trace("socket.reuse", { readyState: socket.readyState });
     return socket;
   }
@@ -186,10 +181,12 @@ function openSocketIfNeeded(): WebSocket | null {
     }
   }
 
-  trace("socket.open", { url });
-  const ws = new WebSocket(url, {
-    headers: { authorization: `Bearer ${userSecret}` },
-  });
+  trace("socket.open", { url: finalUrl, encrypted });
+  const ws = encrypted
+    ? new WebSocket(finalUrl, {
+        headers: { authorization: `Bearer ${userSecret ?? ""}` },
+      })
+    : new WebSocket(finalUrl);
   ws.on("open", () => {
     trace("socket.event.open");
     bumpSocketIdleTimer(ws);
@@ -208,7 +205,7 @@ function openSocketIfNeeded(): WebSocket | null {
   });
 
   socket = ws;
-  socketUrl = url;
+  socketUrl = finalUrl;
   return socket;
 }
 
@@ -356,7 +353,7 @@ function processLog(type: string, message: string, nowMs: number, location?: str
 
 export class AuraServer {
   /**
-   * Configure server logging with project token and user secret.
+   * Configure server logging with project token and optional user secret.
    * Project id, session, and styles are fetched from `POST /api/{project_token}/proj_auth`.
    */
   static configure(token: string, secret?: string): void {
@@ -367,7 +364,6 @@ export class AuraServer {
     session = null;
     styles = undefined;
     projAuthPromise = null;
-    warnedMissingUserSecret = false;
     sendGivenUp = false;
     resetBatchState();
 
@@ -382,8 +378,9 @@ export class AuraServer {
     }
     projectToken = trimmedToken;
     userSecret = trimmedSecret || null;
+    encrypted = !!trimmedSecret;
     startProjAuthOnce();
-    trace("configure.ok", { hasUserSecret: !!userSecret });
+    trace("configure.ok", { hasUserSecret: !!userSecret, encrypted });
   }
 
   static async syncFromSecret(token: string, secret?: string): Promise<void> {
@@ -394,11 +391,11 @@ export class AuraServer {
     }
     const trimmedSecret = typeof secret === "string" ? secret.trim() : "";
     projectToken = trimmedToken;
-    if (trimmedSecret) userSecret = trimmedSecret;
+    userSecret = trimmedSecret || null;
+    encrypted = !!trimmedSecret;
     session = null;
     styles = undefined;
     projAuthPromise = null;
-    warnedMissingUserSecret = false;
     sendGivenUp = false;
 
     const payload = await fetchProjAuthConfig(trimmedToken);

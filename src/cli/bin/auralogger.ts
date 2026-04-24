@@ -52,7 +52,7 @@ function printUsage(): void {
   console.log(chalk.hex("#7ee787")("  client-check") + chalk.dim("   same vibes, browser-style pipe"));
   console.log(chalk.hex("#7ee787")("  test-serverlog") + chalk.dim("  five fake server logs, just for kicks"));
   console.log(chalk.hex("#7ee787")("  test-clientlog") + chalk.dim("  five fake client logs, same deal"));
-  console.log(chalk.hex("#7ee787")("  test-log") + chalk.dim("        five logs via the index auralogger client"));
+  console.log(chalk.hex("#7ee787")("  test-log") + chalk.dim("        five logs via the index AuraClient export"));
   console.log(chalk.hex("#7ee787")("  get-logs") + chalk.dim("       hunt past logs (filters optional)"));
   console.log("");
   console.log(chalk.dim("Docs live on npm: auralogger-cli — filter cheat sheet is there."));

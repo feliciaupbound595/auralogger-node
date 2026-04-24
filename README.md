@@ -62,14 +62,14 @@ npx auralogger client-check
 
 Run `**auralogger init**` and paste what it prints, or copy the shapes below.
 
-**Encryption is optional per project.** If your project has **no encryption enabled**, you can use **one centralized logger** (token only) and skip the client/server split entirely. If your project **is encrypted**, keep the split: `**Auralog**` (browser) vs `**AuraLog**` (server).
+**Encryption is optional per project.** Keep the split in both cases: `**Auralog**` (browser) vs `**AuraLog**` (server). For **non-encrypted projects**, both sides configure with token only. For **encrypted projects**, browser stays token-only while server adds `AURALOGGER_USER_SECRET`.
 
-#### No encryption (recommended first): one import everywhere
+#### No encryption: split helpers, token-only on both sides
 
-Save as e.g. `src/lib/auralog/auralog.ts`:
+Save as e.g. `src/lib/auralog/client-auralog.ts`:
 
 ```ts
-import { Auralogger } from "auralogger-cli";
+import { AuraClient } from "auralogger-cli";
 
 let configured = false;
 
@@ -82,21 +82,53 @@ function ensureConfigured(): void {
     process.env.AURALOGGER_PROJECT_TOKEN;
   // Silent opt-out: if token is missing, we still keep console logging.
   if (projectToken) {
-    // Token only — no user secret required.
-    Auralogger.configure(projectToken);
+    AuraClient.configure(projectToken);
   } else {
     console.warn(
       "[Auralogger] Missing project token env; local-only logging enabled.",
     );
-    Auralogger.configure("");
+    AuraClient.configure("");
   }
   configured = true;
 }
 
-/** Centralized logger — works anywhere, no client/server split needed. */
+/** Browser-safe: token only. */
+export function Auralog(type: string, message: string, location?: string, data?: unknown): void {
+  ensureConfigured();
+  AuraClient.log(type, message, location, data);
+}
+```
+
+Save as e.g. `src/lib/auralog/server-auralog.ts`:
+
+```ts
+import { AuraServer } from "auralogger-cli";
+
+let configured = false;
+
+function ensureConfigured(): void {
+  if (configured) return;
+
+  const projectToken =
+    process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN ||
+    process.env.VITE_AURALOGGER_PROJECT_TOKEN ||
+    process.env.AURALOGGER_PROJECT_TOKEN;
+  if (projectToken) {
+    // No secret passed -> non-encrypted server flow (create_browser_logs route).
+    AuraServer.configure(projectToken);
+  } else {
+    console.warn(
+      "[Auralogger] Missing project token env; local-only logging enabled.",
+    );
+    AuraServer.configure("");
+  }
+  configured = true;
+}
+
+/** Server-only: token-only non-encrypted flow. */
 export function AuraLog(type: string, message: string, location?: string, data?: unknown): void {
   ensureConfigured();
-  Auralogger.log(type, message, location, data);
+  AuraServer.log(type, message, location, data);
 }
 ```
 
@@ -109,10 +141,10 @@ export function AuraLog(type: string, message: string, location?: string, data?:
 - **🎨 Browser / frontend** — React, Vue, Vite, Next client code, anything bundled for the user. `**AuraClient`** streams logs over the WebSocket to Auralogger; it does **not** print successful logs to the browser console (only **errors** / connection issues). **Project token only** in this file — never `AURALOGGER_USER_SECRET`.
 - **🧱 Server / backend / CLI** — HTTP APIs, workers, cron jobs, **this CLI**, anything that runs on a machine you control, not in the user’s browser. **Private creds live only in this copy** — *server suit only.*
 
-**Client-side `Auralog`** (`auralogger-cli/client`) — save as e.g. `src/lib/auralog/client-auralog.ts`. Set `**NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN**` in `.env.local`; `AuraClient` derives project id/session/styles via `POST /api/{project_token}/proj_auth` (token in the URL path).
+**Client-side `Auralog`** (`AuraClient` from `auralogger-cli`) — save as e.g. `src/lib/auralog/client-auralog.ts`. Set `**NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN**` in `.env.local`; `AuraClient` derives project id/session/styles via `POST /api/{project_token}/proj_auth` (token in the URL path).
 
 ```ts
-import { AuraClient } from "auralogger-cli/client";
+import { AuraClient } from "auralogger-cli";
 
 export type AuralogParams = {
   type: string;
@@ -167,10 +199,10 @@ Auralog("error", "client fetch failed", undefined, { retrying: true });
 // expected: [error] client fetch failed { retrying: true }
 ```
 
-**Server-side `AuraLog`** (`auralogger-cli/server`) — save as e.g. `src/lib/auralog/server-auralog.ts`. **Never import this file from client code.**
+**Server-side `AuraLog`** (`AuraServer` from `auralogger-cli`) — save as e.g. `src/lib/auralog/server-auralog.ts`. **Never import this file from client code.**
 
 ```ts
-import { AuraServer } from "auralogger-cli/server";
+import { AuraServer } from "auralogger-cli";
 
 let configured = false;
 
@@ -328,10 +360,11 @@ Required env for CLI commands: see **Environment variables** earlier in this REA
 
 - **Server code**: `import { AuraServer } from "auralogger-cli/server"`
 - **Browser code**: `import { AuraClient } from "auralogger-cli/client"`
+- **Root import (also supported)**: `import { AuraServer, AuraClient } from "auralogger-cli"`
 
 Using the explicit subpaths avoids accidentally pulling Node-only dependencies (like `ws`) into client bundles. The package `exports` field maps `**auralogger-cli/server`** to a stub on `**browser`** builds.
 
-**Fire-and-forget:** `AuraServer.log` / `AuraClient.log` (and the `**Auralog`** / `**AuraLog`** helpers) return immediately; work is scheduled on the next tick. **Both always print to the local console.** When credentials (`AURALOGGER_PROJECT_TOKEN` + `AURALOGGER_USER_SECRET`) are configured, logs are also streamed to the backend over WebSocket; if credentials are missing, logs print locally only with no warning. Problems (WebSocket / send failures, `proj_auth` errors) surface via `console.error` / `console.warn`. Idle sockets close after a quiet period; call `AuraServer.closeSocket()` / `AuraClient.closeSocket()` for a clean shutdown. On Node you can call `AuraServer.configure(projectToken, userSecret)` or `await AuraServer.syncFromSecret(projectToken, userSecret)` yourself if you skip the helper.
+**Fire-and-forget:** `AuraServer.log` / `AuraClient.log` (and the `**Auralog`** / `**AuraLog`** helpers) return immediately; work is scheduled on the next tick. **Both always print to the local console.** With a project token configured, logs can stream over WebSocket. `AuraServer.configure(projectToken, userSecret)` uses encrypted `create_log`, while `AuraServer.configure(projectToken)` uses non-encrypted `create_browser_logs`. Problems (WebSocket / send failures, `proj_auth` errors) surface via `console.error` / `console.warn`. Idle sockets close after a quiet period; call `AuraServer.closeSocket()` / `AuraClient.closeSocket()` for a clean shutdown.
 
 ---
 
@@ -343,9 +376,9 @@ Using the explicit subpaths avoids accidentally pulling Node-only dependencies (
 
 *Usually: the token or user secret never made it in, or `**proj_auth*`* didn’t get a word in.*
 
-- The process needs `**AURALOGGER_PROJECT_TOKEN`** and `**AURALOGGER_USER_SECRET`** (or explicit `AuraServer.configure(projectToken, userSecret)` / `syncFromSecret`). Id, session, and styles are loaded via `**POST /api/{project_token}/proj_auth`** after configure (token URL-encoded in the path; no `secret` header on that route).
+- The process needs `**AURALOGGER_PROJECT_TOKEN`** (and `**AURALOGGER_USER_SECRET`** only for encrypted mode via `create_log`). Id, session, and styles are loaded via `**POST /api/{project_token}/proj_auth`** after configure (token is embedded raw in the path; no `secret` header on that route).
 
-If private creds are missing or `proj_auth` fails, `**AuraServer.log` does not stream** to the backend — logs print locally only, silently. `**console.error`** appears only when a send or socket operation fails.
+If the token is missing or `proj_auth` fails, `**AuraServer.log` does not stream** to the backend — logs print locally only. `**console.error`** appears when a send or socket operation fails.
 
 ### Client bundle includes `ws` (or crashes on `process`, `fs`, etc.)
 
@@ -380,7 +413,7 @@ Two classes of values:
   Never expose `**AURALOGGER_USER_SECRET`** in browser bundles, public repos, or `NEXT_PUBLIC_*` / `VITE_*` keys.
 - **Publishable** — `**project_id`**, `**session`**, and `**styles**` (the three non-secret fields from `auralogger init`). They are not API secrets. You still choose **where** they live: server-only `.env` vs client-visible env keys for frontends.
 
-The CLI and `**AuraServer`** need **both private creds** for server-side operations. `**AuraClient`** uses a **project token only** and hydrates id/session/styles via `proj_auth`; it never reads `**AURALOGGER_USER_SECRET`**.
+The CLI needs both private creds for authenticated commands. `**AuraServer`** can run encrypted (token + secret) or non-encrypted (token only). `**AuraClient`** uses a **project token only** and hydrates id/session/styles via `proj_auth`; it never reads `**AURALOGGER_USER_SECRET`**.
 
 #### Private variable (exact name)
 
@@ -451,7 +484,7 @@ VITE_AURALOGGER_PROJECT_TOKEN="your-project-token"
 | `**auralogger server-check`** | Token + user secret in env (or paste when prompted) | CLI fetches project id + session via `proj_auth` before opening the socket (session/styles not required in `.env`)                                              |
 | `**auralogger client-check`** | Token + user secret in env (or paste when prompted) | Same `proj_auth` context as `**server-check`**; opens `**/{proj_token}/create_browser_logs**` (path-only); session in payload; **no** user secret on the socket |
 | `**auralogger get-logs`**     | Token + user secret in env or at prompt             | `**STYLES`** optional in env: if unset, CLI fetches them via `**proj_auth`** for this run                                                                       |
-| `**AuraServer`**              | Required (`configure` / env / `syncFromSecret`)     | Loaded from `**proj_auth**` after token auth (publishable trio not required in `.env`)                                                                          |
+| `**AuraServer`**              | Token required; secret optional by mode             | Loaded from `**proj_auth**` after token auth (publishable trio not required in `.env`)                                                                          |
 | `**AuraClient**`              | Browser: project token only; never user secret      | Id/session/styles auto-hydrated via `proj_auth`                                                                                                                 |
 
 
@@ -461,7 +494,7 @@ VITE_AURALOGGER_PROJECT_TOKEN="your-project-token"
 
 - `**server-check` / variable missing** — Run from the directory that contains your `.env`, or export vars in the shell (`process.cwd()`).
 - **Styles errors** — Value must be valid JSON array string; fix the env value or unset it so `**get-logs`** can pull styles from `**proj_auth`**.
-- `**AuraServer` not streaming** — Ensure `**AURALOGGER_PROJECT_TOKEN`** and `**AURALOGGER_USER_SECRET`** (or call `**syncFromSecret` / `configure`**) so auth + ingest can run; `proj_auth` uses the token in the URL path. Logs always print locally — if they're not reaching the dashboard, check credentials and `proj_auth` reachability; problems surface as `**console.error`**.
+- `**AuraServer` not streaming** — Ensure `**AURALOGGER_PROJECT_TOKEN`** is set, and include `**AURALOGGER_USER_SECRET`** only for encrypted mode (`create_log`). `proj_auth` uses the token in the URL path. Logs always print locally — if they're not reaching the dashboard, check credentials, chosen mode, and `proj_auth` reachability; problems surface as `**console.error`**.
 - **Client bundle + `ws*`* — Use `**auralogger-cli/client**`; the package maps `**./server**` to a browser stub so `ws` is not pulled in for `AuraServer` imports on the client.
 
 ##### Advanced overrides (contributors / self-hosted backends)
