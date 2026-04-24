@@ -34,6 +34,8 @@ let socketIdleTimer: ReturnType<typeof setTimeout> | null = null;
 let batch: LogPayload[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight = false;
+let warnedMissingUserSecret = false;
+let sendGivenUp = false;
 
 const deferTask =
   typeof setImmediate === "function"
@@ -146,7 +148,12 @@ function resetBatchState(): void {
 function openSocketIfNeeded(): WebSocket | null {
   if (!projectToken) return null;
   if (!userSecret) {
-    console.error("auralogger: missing user secret. Call AuraServer.configure(projectToken, userSecret) before logging.");
+    if (!warnedMissingUserSecret) {
+      warnedMissingUserSecret = true;
+      console.error(
+        "auralogger: missing user secret. Call AuraServer.configure(projectToken, userSecret) before logging.",
+      );
+    }
     return null;
   }
   const url = `${resolveWsBaseUrl()}/${encodeURIComponent(projectToken)}/create_log`;
@@ -228,10 +235,15 @@ async function flushNow(): Promise<void> {
   flushInFlight = true;
   clearFlushTimer();
   try {
+    if (sendGivenUp) {
+      batch = [];
+      return;
+    }
     if (!projAuthPromise) return;
     const ok = await projAuthPromise;
     if (!ok || !session) {
       batch = [];
+      sendGivenUp = true;
       return;
     }
     const liveSession = session;
@@ -240,14 +252,15 @@ async function flushNow(): Promise<void> {
       for (const p of slice) p.session = liveSession;
       const sent = await sendBatch(slice);
       if (!sent) {
-        scheduleFlush();
-        break;
+        // One attempt, no retry loop. Drop everything and stop until configure() resets.
+        batch = [];
+        sendGivenUp = true;
+        return;
       }
       batch.splice(0, slice.length);
     }
   } finally {
     flushInFlight = false;
-    if (batch.length > 0) scheduleFlush();
   }
 }
 
@@ -278,6 +291,7 @@ function processLog(type: string, message: string, nowMs: number, location?: str
   }
 
   if (!projectToken) return;
+  if (sendGivenUp) return;
 
   startProjAuthOnce();
 
@@ -302,6 +316,8 @@ export class AuraServer {
     session = null;
     styles = undefined;
     projAuthPromise = null;
+    warnedMissingUserSecret = false;
+    sendGivenUp = false;
     resetBatchState();
 
     if (!trimmedToken) {
@@ -328,6 +344,8 @@ export class AuraServer {
     session = null;
     styles = undefined;
     projAuthPromise = null;
+    warnedMissingUserSecret = false;
+    sendGivenUp = false;
 
     const payload = await fetchProjAuthConfig(trimmedToken);
     const pid = payload.project_id?.trim() ?? "";

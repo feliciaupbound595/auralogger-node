@@ -44,6 +44,8 @@ let socketIdleTimer: ReturnType<typeof setTimeout> | null = null;
 let batch: LogPayload[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight = false;
+let sendGivenUp = false;
+let warnedMissingWebSocket = false;
 
 const deferTask =
   typeof setImmediate === "function"
@@ -216,9 +218,12 @@ function attachLifecycle(ws: WebSocketLike, url: string): void {
 function createWebSocket(url: string): WebSocketLike | null {
   const Native = (globalThis as { WebSocket?: new (u: string) => unknown }).WebSocket;
   if (typeof Native !== "function") {
-    console.error(
-      "auralogger: WebSocket is not available. Use Node and set globalThis.WebSocket from the ws package before calling AuraClient.log.",
-    );
+    if (!warnedMissingWebSocket) {
+      warnedMissingWebSocket = true;
+      console.error(
+        "auralogger: WebSocket is not available. Use Node and set globalThis.WebSocket from the ws package before calling AuraClient.log.",
+      );
+    }
     return null;
   }
   try {
@@ -308,10 +313,15 @@ async function flushNow(): Promise<void> {
   flushInFlight = true;
   clearFlushTimer();
   try {
+    if (sendGivenUp) {
+      batch = [];
+      return;
+    }
     if (!projAuthPromise) return;
     const ok = await projAuthPromise;
     if (!ok || !session) {
       batch = [];
+      sendGivenUp = true;
       return;
     }
     const liveSession = session;
@@ -320,14 +330,15 @@ async function flushNow(): Promise<void> {
       for (const p of slice) p.session = liveSession;
       const sent = await sendBatch(slice);
       if (!sent) {
-        scheduleFlush();
-        break;
+        // One attempt, no retry loop. Drop everything and stop until configure() resets.
+        batch = [];
+        sendGivenUp = true;
+        return;
       }
       batch.splice(0, slice.length);
     }
   } finally {
     flushInFlight = false;
-    if (batch.length > 0) scheduleFlush();
   }
 }
 
@@ -358,6 +369,7 @@ function processLog(type: string, message: string, nowMs: number, location?: str
   }
 
   if (!projectToken) return;
+  if (sendGivenUp) return;
 
   startProjAuthOnce();
 
@@ -384,6 +396,8 @@ export class AuraClient {
     batch = [];
     clearFlushTimer();
     flushInFlight = false;
+    sendGivenUp = false;
+    warnedMissingWebSocket = false;
 
     if (!token) {
       projectToken = null;
