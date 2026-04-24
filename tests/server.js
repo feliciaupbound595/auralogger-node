@@ -1,5 +1,6 @@
 const path = require("node:path");
 
+const { DEFAULT_TEST_PROJECT_TOKEN } = require("./harness-defaults.json");
 const { AuraServer } = require(path.resolve(__dirname, "../dist/server.js"));
 
 /**
@@ -13,19 +14,23 @@ const { AuraServer } = require(path.resolve(__dirname, "../dist/server.js"));
 let configured = false;
 
 function ensureConfigured() {
-  if (configured) return;
+  if (configured) {
+    return;
+  }
 
-  // You can also pass string literals to AuraServer.configure(...) instead of process.env (never commit real secrets).
   const projectToken =
     process.env.NEXT_PUBLIC_AURALOGGER_PROJECT_TOKEN ||
     process.env.VITE_AURALOGGER_PROJECT_TOKEN ||
     process.env.AURALOGGER_PROJECT_TOKEN ||
-    "";
+    DEFAULT_TEST_PROJECT_TOKEN;
   const userSecret = process.env.AURALOGGER_USER_SECRET || "";
 
-  // Silent opt-out: missing creds keep local-only logging for this harness.
   AuraServer.configure(projectToken, userSecret);
   configured = true;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Server-only: uses project token + user secret from env. Do not import from client components. */
@@ -34,7 +39,10 @@ function AuraLog(params) {
   AuraServer.log(params.type, params.message, params.location, params.data);
 }
 
-function runServerTest() {
+/** Mirrors cli server burst + close so batched server traffic flushes. */
+async function runServerTest() {
+  ensureConfigured();
+
   AuraLog({
     type: "info",
     message: "server test suite started",
@@ -62,9 +70,20 @@ function runServerTest() {
     location: "node/tests/local-server.js:/test",
     data: { userId: "usr_42", action: "login", durationMs: 12 },
   });
+
+  AuraLog({
+    type: "info",
+    message: "server test suite finished",
+    location: "node/tests/local-server.js:/test",
+    data: { logsEmitted: 5 },
+  });
+
+  await sleep(800);
+  await AuraServer.closeSocket(3000);
 }
 
 module.exports = {
   AuraLog,
+  AuraServer,
   runServerTest,
 };

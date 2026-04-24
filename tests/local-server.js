@@ -3,6 +3,7 @@ const http = require("node:http");
 const path = require("node:path");
 const url = require("node:url");
 const { runServerTest } = require("./server.js");
+const { runClientTest: runNodeClientTest } = require("./client.js");
 
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.AURALOGGER_TEST_PORT ?? 4173);
@@ -70,16 +71,41 @@ const server = http.createServer((req, res) => {
     const route = parsed.pathname;
 
     if (req.method === "GET" && route === "/test") {
-      
-      runServerTest();
-
-      sendJson(res, 200, { ok: true, route: "/test", logged: true });
+      void (async () => {
+        try {
+          await runServerTest();
+          sendJson(res, 200, { ok: true, route: "/test", logged: true });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          sendJson(res, 500, { ok: false, error: msg });
+        }
+      })();
       return;
     }
 
     if (req.method === "GET" && route === "/test-default") {
-      runServerTest();
-      sendJson(res, 200, { ok: true, route: "/test-default", logged: true });
+      void (async () => {
+        try {
+          await runServerTest();
+          sendJson(res, 200, { ok: true, route: "/test-default", logged: true });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          sendJson(res, 500, { ok: false, error: msg });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "GET" && route === "/test-client") {
+      void (async () => {
+        try {
+          await runNodeClientTest();
+          sendJson(res, 200, { ok: true, route: "/test-client", logged: true });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          sendJson(res, 500, { ok: false, error: msg });
+        }
+      })();
       return;
     }
 
@@ -97,5 +123,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`Auralogger test server running at http://${HOST}:${PORT}`);
-  console.log("Open / for client page (browser client logs); GET /test runs AuraServer in Node");
+  console.log("Open / for the browser harness; GET /test = AuraServer (Node); GET /test-client = AuraClient (Node + ws)");
 });

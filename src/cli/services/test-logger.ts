@@ -12,9 +12,18 @@ import {
   TEST_SERVERLOG_START_BANNER_ASIDES,
 } from "../utility/aside-pools";
 import { maybePrintGenericSpice, printAside } from "../utility/cli-tone";
+import { loadCliEnvFiles } from "../utility/cli-load-env";
+import {
+  getResolvedProjectToken,
+  getResolvedUserSecret,
+} from "../../utils/env-config";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function ensureCliEnv(): void {
+  loadCliEnvFiles(process.cwd());
 }
 
 export async function runTestServerlog(): Promise<void> {
@@ -29,6 +38,11 @@ export async function runTestServerlog(): Promise<void> {
     printAside(a.emoji, a.line);
   }
   console.log("");
+
+  ensureCliEnv();
+  const token = getResolvedProjectToken() ?? "";
+  const secret = getResolvedUserSecret() ?? "";
+  AuraServer.configure(token, secret);
 
   const serverLogs: Array<Parameters<typeof AuraServer.log>> = [
     ["info",  "server test suite started",               "cli/test-serverlog", { env: "test", source: "auralogger-cli" }],
@@ -77,6 +91,9 @@ export async function runTestClientlog(): Promise<void> {
   }
   console.log("");
 
+  ensureCliEnv();
+  AuraClient.configure(getResolvedProjectToken() ?? "");
+
   const clientLogs: Array<Parameters<typeof AuraClient.log>> = [
     ["info",  "client test suite started",                    "cli/test-clientlog", { source: "auralogger-cli", env: "test" }],
     ["warn",  "localStorage quota nearing limit",             "cli/test-clientlog", { usedKB: 4800, limitKB: 5120 }],
@@ -123,6 +140,9 @@ export async function runTestLog(): Promise<void> {
     printAside(a.emoji, a.line);
   }
   console.log("");
+
+  ensureCliEnv();
+  Auralogger.configure(getResolvedProjectToken() ?? "");
 
   const logs: Array<Parameters<typeof Auralogger.log>> = [
     ["info",  "test-log suite started",                       "cli/test-log", { source: "auralogger-cli", env: "test" }],

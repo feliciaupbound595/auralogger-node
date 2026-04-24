@@ -21,18 +21,27 @@
   </head>
   <body>
     <h1>Auralogger SDK Runtime Test</h1>
-    <button id="client-log-btn" type="button">Send Client Log (browser / DevTools)</button>
-    <button id="server-log-btn" type="button">Send Server Log (GET /test, Node)</button>
+    <p>
+      Default project token comes from <code>tests/harness-defaults.json</code>. Override with
+      <code>?projectToken=...</code>, <code>localStorage['AURALOGGER_PROJECT_TOKEN']</code>, or env vars for Node routes.
+      For remote <strong>server</strong> logs, set <code>AURALOGGER_USER_SECRET</code> (still required for AuraServer).
+      Optional: <code>?auraloggerDebug=1</code> for SDK <code>auralogger:debug</code> lines.
+    </p>
+    <button id="client-log-btn" type="button">Send Client Logs (browser / DevTools)</button>
+    <button id="node-client-log-btn" type="button">Send Client Logs (Node + ws, GET /test-client)</button>
+    <button id="server-log-btn" type="button">Send Server Logs (GET /test, Node)</button>
     <p id="status">Ready</p>
 
     <script type="module">
       /* Browser harness: ./client-page.mjs exports runClientTest. Do not import ./client.js (Node CJS / SDK bundle). */
-      import { runClientTest, runServerTest } from "./client-page.mjs";
+      import { runClientTest, runNodeClientTest, runServerTest } from "./client-page.mjs";
       const statusEl = document.getElementById("status");
       const clientButton = document.getElementById("client-log-btn");
+      const nodeClientButton = document.getElementById("node-client-log-btn");
       const serverButton = document.getElementById("server-log-btn");
       if (
         !(clientButton instanceof HTMLButtonElement) ||
+        !(nodeClientButton instanceof HTMLButtonElement) ||
         !(serverButton instanceof HTMLButtonElement) ||
         !statusEl
       ) {
@@ -57,6 +66,17 @@
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           statusEl.textContent = `Server failed: ${message}`;
+        }
+      });
+
+      nodeClientButton.addEventListener("click", async () => {
+        statusEl.textContent = "Sending Node client logs (ws)...";
+        try {
+          const result = await runNodeClientTest();
+          statusEl.textContent = `Node client burst sent: ${JSON.stringify(result)}`;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          statusEl.textContent = `Node client failed: ${message}`;
         }
       });
     </script>

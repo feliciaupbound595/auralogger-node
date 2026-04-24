@@ -1,6 +1,6 @@
 {
   "name": "auralogger-cli",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "Real-time logging and observability SDK and CLI for streaming, storing, searching, and filtering application logs—beautifully visualized and accessible from anywhere in the world across terminal, web, and any screen.",
   "keywords": [
     "auralogger",
@@ -94,7 +94,8 @@
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc",
     "bundle:test-client": "npx --yes esbuild dist/client.js --bundle --format=esm --platform=browser --outfile=tests/auralogger-client.browser.mjs",
     "prepare": "npm run build",
-    "test": "npm run build && node dist/cli/bin/auralogger.js test-serverlog"
+    "test": "npm run build && node dist/cli/bin/auralogger.js test-serverlog",
+    "test:local-harness": "node tests/local-server.js"
   },
   "dependencies": {
     "chalk": "^4.1.2",

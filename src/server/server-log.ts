@@ -1,23 +1,14 @@
 import WebSocket from "ws";
 
-import {
-  fetchProjAuthConfig,
-  type InitConfigPayload,
-} from "../cli/services/init";
+import { fetchProjAuthConfig, type InitConfigPayload } from "../cli/services/init";
 import { printLog } from "../cli/services/log-print";
-import { loadCliEnvFiles } from "../cli/utility/cli-load-env";
-import type { ProjAuthConfigPayload } from "../cli/utility/log-styles";
 import { resolveWsBaseUrl } from "../utils/backend-origin";
 import { DEFAULT_SOCKET_IDLE_CLOSE_MS } from "../utils/socket-idle-close";
-import {
-  getResolvedProjectToken,
-  getResolvedUserSecret,
-  resolveStylesForConsolePrint,
-} from "../utils/env-config";
+import { resolveStylesForConsolePrint } from "../utils/env-config";
+import type { ProjAuthConfigPayload } from "../cli/utility/log-styles";
 
+const UNKNOWN_TYPE = "unknown";
 const LOCAL_FALLBACK_SESSION = "auralogger-local-session";
-const SDK_RETRY_ATTEMPTS = 3;
-const SDK_RETRY_DELAY_MS = 500;
 const BATCH_FLUSH_INTERVAL_MS = 30;
 const BATCH_MAX_SIZE = 30;
 
@@ -29,103 +20,94 @@ interface LogPayload {
   data?: string;
   created_at: string;
 }
-const UNKNOWN_TYPE = "unknown";
 
-let nodeEnvLoaded = false;
-let overrideProjectToken: string | undefined;
-let overrideUserSecret: string | undefined;
-let runtimeProjectId: string | null = null;
-let runtimeSession: string | null = null;
-let runtimeStyles: ProjAuthConfigPayload["styles"] | undefined = undefined;
-let localSessionId: string | null = null;
+let projectToken: string | null = null;
+let userSecret: string | null = null;
+let session: string | null = null;
+let styles: ProjAuthConfigPayload["styles"] | undefined = undefined;
+let projAuthPromise: Promise<boolean> | null = null;
+
 let socket: WebSocket | null = null;
 let socketUrl: string | null = null;
 let socketIdleTimer: ReturnType<typeof setTimeout> | null = null;
-let bufferedLogs: LogPayload[] = [];
+
+let batch: LogPayload[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight = false;
 
-/** Single-flight lazy fetch for project token -> project/session/styles hydration. */
-let hydrateFromSecretPromise: Promise<void> | null = null;
+const deferTask =
+  typeof setImmediate === "function"
+    ? (task: () => void) => setImmediate(task)
+    : (task: () => void) => setTimeout(task, 0);
+
+function toErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function padMicros(us: number): string {
+  return String(us).padStart(6, "0");
+}
+
+function createIsoTimestampWithMicroseconds(epochMs: number): string {
+  const d = new Date(epochMs);
+  const iso = d.toISOString();
+  const micros = padMicros(d.getUTCMilliseconds() * 1_000);
+  return `${iso.slice(0, 19)}.${micros}Z`;
+}
+
+function normalizeType(type: string): string {
+  return type.trim() ? type.trim() : UNKNOWN_TYPE;
+}
+
+function normalizeLocation(location?: string): string | undefined {
+  if (typeof location !== "string") return undefined;
+  const trimmed = location.trim();
+  return trimmed || undefined;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function maybeData(data: unknown): string | undefined {
+  if (data === null || data === undefined) return undefined;
+  if (typeof data === "string") return data;
+  if (!isPlainObject(data)) return undefined;
+  try {
+    return JSON.stringify(data);
+  } catch {
+    return undefined;
+  }
+}
 
 function applyProjAuthPayload(payload: InitConfigPayload): void {
-  overrideProjectToken = payload.project_token;
-  runtimeProjectId = payload.project_id?.trim() ?? null;
-  runtimeSession = payload.session?.trim() ?? null;
-  runtimeStyles = payload.styles;
-  localSessionId = null;
+  projectToken = payload.project_token;
+  session = payload.session?.trim() ?? null;
+  styles = payload.styles;
 }
 
-function clearHydratedRuntimeConfig(): void {
-  runtimeProjectId = null;
-  runtimeSession = null;
-  runtimeStyles = undefined;
-}
-
-async function ensureHydratedRuntimeConfig(): Promise<void> {
-  const projectToken = resolvedProjectToken();
-  if (!projectToken) {
-    return;
-  }
-
-  if (runtimeProjectId && runtimeSession && runtimeStyles !== undefined) {
-    return;
-  }
-
-  if (!hydrateFromSecretPromise) {
-    hydrateFromSecretPromise = (async () => {
-      const token = resolvedProjectToken();
-      if (!token) {
-        return;
-      }
-      let payload: InitConfigPayload | null = null;
-      for (let attempt = 1; attempt <= SDK_RETRY_ATTEMPTS; attempt += 1) {
-        try {
-          payload = await fetchProjAuthConfig(token);
-          break;
-        } catch (error: unknown) {
-          if (attempt >= SDK_RETRY_ATTEMPTS) {
-            throw error;
-          }
-          const msg = error instanceof Error ? error.message : String(error);
-          console.warn(
-            `auralogger: proj_auth failed (${msg}); retrying (${attempt + 1}/${SDK_RETRY_ATTEMPTS})...`,
-          );
-          await new Promise((r) => setTimeout(r, SDK_RETRY_DELAY_MS));
-        }
-      }
-      if (!payload) {
-        return;
-      }
-      const projectId = payload.project_id?.trim() ?? "";
-      const session = payload.session?.trim() ?? "";
-      if (!projectId || !session) {
-        throw new Error(
-          "auralogger: proj_auth response missing project id or session.",
-        );
-      }
-      applyProjAuthPayload(payload);
-    })();
-  }
-
+async function runProjAuth(token: string): Promise<boolean> {
+  let payload: InitConfigPayload;
   try {
-    await hydrateFromSecretPromise;
-  } catch (error: unknown) {
-    hydrateFromSecretPromise = null;
-    const msg = error instanceof Error ? error.message : String(error);
-    console.error(`auralogger: could not load project config from API: ${msg}`);
+    payload = await fetchProjAuthConfig(token);
+  } catch (err: unknown) {
+    console.error(`auralogger: could not load project config from API: ${toErrorMessage(err)}`);
+    return false;
   }
+  const pid = payload.project_id?.trim() ?? "";
+  const sess = payload.session?.trim() ?? "";
+  if (!pid || !sess) {
+    console.warn("auralogger: proj_auth response missing project id or session; local-only logging.");
+    return false;
+  }
+  applyProjAuthPayload(payload);
+  return true;
 }
 
-function ensureNodeEnvLoadedOnce(): void {
-  if (nodeEnvLoaded) {
-    return;
-  }
-  if (typeof process === "undefined" || !process.versions?.node) {
-    return;
-  }
-  nodeEnvLoaded = true;
-  loadCliEnvFiles(process.cwd());
+function startProjAuthOnce(): void {
+  if (projAuthPromise || !projectToken) return;
+  const token = projectToken;
+  projAuthPromise = runProjAuth(token);
 }
 
 function clearSocketIdleTimer(): void {
@@ -146,122 +128,44 @@ function bumpSocketIdleTimer(ws: WebSocket): void {
   clearSocketIdleTimer();
   socketIdleTimer = setTimeout(() => {
     socketIdleTimer = null;
-    if (socket !== ws || ws.readyState !== WebSocket.OPEN) {
-      return;
-    }
+    if (socket !== ws || ws.readyState !== WebSocket.OPEN) return;
     try {
       ws.close();
     } catch {
-      // ignore
+      /* ignore */
     }
   }, DEFAULT_SOCKET_IDLE_CLOSE_MS);
 }
 
-function resetBufferedLogs(): void {
-  bufferedLogs = [];
+function resetBatchState(): void {
+  batch = [];
   clearFlushTimer();
   flushInFlight = false;
 }
 
-const deferTask =
-  typeof setImmediate === "function"
-    ? (task: () => void) => setImmediate(task)
-    : (task: () => void) => setTimeout(task, 0);
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function resolvedProjectToken(): string | undefined {
-  if (overrideProjectToken !== undefined) {
-    const t = overrideProjectToken.trim();
-    return t.length > 0 ? t : undefined;
+function openSocketIfNeeded(): WebSocket | null {
+  if (!projectToken) return null;
+  if (!userSecret) {
+    console.error("auralogger: missing user secret. Call AuraServer.configure(projectToken, userSecret) before logging.");
+    return null;
   }
-  return getResolvedProjectToken();
-}
-
-function resolvedUserSecret(): string | undefined {
-  if (overrideUserSecret !== undefined) {
-    const t = overrideUserSecret.trim();
-    return t.length > 0 ? t : undefined;
+  const url = `${resolveWsBaseUrl()}/${encodeURIComponent(projectToken)}/create_log`;
+  if (socket && socketUrl === url && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    return socket;
   }
-  return getResolvedUserSecret();
-}
-
-function getOrCreateLocalSession(): string {
-  if (!localSessionId) {
-    localSessionId = LOCAL_FALLBACK_SESSION;
-  }
-  return localSessionId;
-}
-
-function getProjectToken(): string | null {
-  return resolvedProjectToken() ?? null;
-}
-
-function getUserSecret(): string | null {
-  return resolvedUserSecret() ?? null;
-}
-
-
-
-function padMicros(microseconds: number): string {
-  return String(microseconds).padStart(6, "0");
-}
-
-function createIsoTimestampWithMicroseconds(epochMs: number): string {
-  const d = new Date(epochMs);
-  const iso = d.toISOString();
-  const micros = padMicros(d.getUTCMilliseconds() * 1_000);
-  return `${iso.slice(0, 19)}.${micros}Z`;
-}
-
-function normalizeType(type: string): string {
-  return type.trim() ? type.trim() : UNKNOWN_TYPE;
-}
-
-function normalizeLocation(location?: string): string | undefined {
-  if (typeof location !== "string") {
-    return undefined;
-  }
-  const trimmed = location.trim();
-  return trimmed || undefined;
-}
-
-function maybeData(data: unknown): string | undefined {
-  if (data === null || data === undefined) {
-    return undefined;
+  if (socket && socket.readyState !== WebSocket.CLOSED) {
+    clearSocketIdleTimer();
+    try {
+      socket.close();
+    } catch {
+      /* ignore */
+    }
   }
 
-  if (typeof data === "string") {
-    return data;
-  }
-
-  if (!isPlainObject(data)) {
-    return undefined;
-  }
-
-  try {
-    return JSON.stringify(data);
-  } catch {
-    return undefined;
-  }
-}
-
-function buildWsUrl(projectToken: string): string {
-  return `${resolveWsBaseUrl()}/${encodeURIComponent(projectToken)}/create_log`;
-}
-
-function connectSocket(url: string, userSecret: string): WebSocket {
   const ws = new WebSocket(url, {
-    headers: {
-      authorization: `Bearer ${userSecret}`,
-    },
+    headers: { authorization: `Bearer ${userSecret}` },
   });
-
-  ws.on("open", () => {
-    bumpSocketIdleTimer(ws);
-  });
+  ws.on("open", () => bumpSocketIdleTimer(ws));
   ws.on("close", () => {
     clearSocketIdleTimer();
     if (socket === ws) {
@@ -270,168 +174,80 @@ function connectSocket(url: string, userSecret: string): WebSocket {
     }
   });
   ws.on("error", (error: Error) => {
-    const message = error?.message || String(error);
-    console.error(`auralogger: websocket error: ${message}`);
+    console.error(`auralogger: websocket error: ${error?.message || String(error)}`);
   });
 
-  return ws;
-}
-
-function ensureSocket(): WebSocket | null {
-  const projectToken = getProjectToken();
-  if (!projectToken) {
-    console.error(
-      "auralogger: missing AURALOGGER_PROJECT_TOKEN in the environment.",
-    );
-    return null;
-  }
-  const userSecret = getUserSecret();
-  if (!userSecret) {
-    console.error(
-      "auralogger: missing AURALOGGER_USER_SECRET in the environment.",
-    );
-    return null;
-  }
-
-  const url = buildWsUrl(projectToken);
-  if (socket && socketUrl === url && socket.readyState === WebSocket.OPEN) {
-    return socket;
-  }
-  if (socket && socketUrl === url && socket.readyState === WebSocket.CONNECTING) {
-    return socket;
-  }
-  if (socket && socket.readyState !== WebSocket.CLOSED) {
-    clearSocketIdleTimer();
-    socket.close();
-  }
-  socket = connectSocket(url, userSecret);
+  socket = ws;
   socketUrl = url;
   return socket;
 }
 
-function sendServerBatch(
-  ws: WebSocket,
-  sendPayload: string,
-  batch: LogPayload[],
-): void {
-  ws.send(sendPayload, (error?: Error) => {
-    if (!error) {
-      return;
-    }
-    const sendErr = error?.message || String(error);
-    console.warn(`auralogger: websocket send failed (${sendErr}); retrying (2/2)...`);
-    if (socket && socket.readyState !== WebSocket.CLOSED) {
-      try {
-        socket.close();
-      } catch {
-        // ignore
-      }
-    }
-    socket = null;
-    socketUrl = null;
-    const retryWs = ensureSocket();
-    if (!retryWs) {
-      console.error("auralogger: websocket unavailable after retry; log batch payload:", batch);
-      return;
-    }
-    if (retryWs.readyState === WebSocket.OPEN) {
-      bumpSocketIdleTimer(retryWs);
-      retryWs.send(sendPayload, (retryError?: Error) => {
-        if (!retryError) {
-          return;
-        }
-        const retryErr = retryError?.message || String(retryError);
-        console.error(`auralogger: websocket send failed after retry: ${retryErr}`);
-        console.error("auralogger: failed batch payload:", batch);
-      });
-      return;
-    }
-    retryWs.once("open", () => {
-      bumpSocketIdleTimer(retryWs);
-      retryWs.send(sendPayload, (retryError?: Error) => {
-        if (!retryError) {
-          return;
-        }
-        const retryErr = retryError?.message || String(retryError);
-        console.error(`auralogger: websocket send failed after retry: ${retryErr}`);
-        console.error("auralogger: failed batch payload:", batch);
-      });
+function sendOverSocket(ws: WebSocket, payload: string, onErr: (err: unknown) => void): void {
+  try {
+    ws.send(payload, (err?: Error) => {
+      if (err) onErr(err);
     });
-  });
+  } catch (err: unknown) {
+    onErr(err);
+  }
 }
 
-function sendServerLogBatch(batch: LogPayload[]): void {
-  const ws = ensureSocket();
-  if (!ws) {
-    console.error("auralogger: websocket unavailable; log batch payload:", batch);
-    return;
+async function sendBatch(payloads: LogPayload[]): Promise<boolean> {
+  const ws = openSocketIfNeeded();
+  if (!ws) return false;
+
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(payloads);
+  } catch (err: unknown) {
+    console.error(`auralogger: failed to serialize log batch: ${toErrorMessage(err)}`);
+    return false;
   }
+
+  const onSendErr = (err: unknown) => {
+    console.error(`auralogger: websocket send failed: ${toErrorMessage(err)}`);
+  };
+
   if (ws.readyState === WebSocket.OPEN) {
     bumpSocketIdleTimer(ws);
+    sendOverSocket(ws, serialized, onSendErr);
+    return true;
   }
-
-  let sendPayload = "";
-  try {
-    sendPayload = JSON.stringify(batch);
-  } catch (error: unknown) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    console.error(`auralogger: failed to serialize log batch payload: ${errMsg}`);
-    console.error("auralogger: failed batch payload:", batch);
-    return;
-  }
-  if (ws.readyState === WebSocket.OPEN) {
-    sendServerBatch(ws, sendPayload, batch);
-    return;
-  }
-
   if (ws.readyState === WebSocket.CONNECTING) {
     ws.once("open", () => {
       bumpSocketIdleTimer(ws);
-      sendServerBatch(ws, sendPayload, batch);
+      sendOverSocket(ws, serialized, onSendErr);
     });
-    ws.once("error", () => {
-      console.warn("auralogger: websocket unavailable while connecting; retrying (2/2)...");
-      if (socket && socket.readyState !== WebSocket.CLOSED) {
-        try {
-          socket.close();
-        } catch {
-          // ignore
-        }
-      }
-      socket = null;
-      socketUrl = null;
-      const retryWs = ensureSocket();
-      if (!retryWs) {
-        console.error("auralogger: websocket unavailable after retry; log batch payload:", batch);
-        return;
-      }
-      if (retryWs.readyState === WebSocket.OPEN) {
-        bumpSocketIdleTimer(retryWs);
-        sendServerBatch(retryWs, sendPayload, batch);
-      }
-    });
-    return;
+    return true;
   }
-
-  console.error("auralogger: websocket unavailable; log batch payload:", batch);
+  return false;
 }
 
-async function flushBufferedLogsNow(): Promise<void> {
-  if (flushInFlight) {
-    return;
-  }
+async function flushNow(): Promise<void> {
+  if (flushInFlight) return;
   flushInFlight = true;
   clearFlushTimer();
   try {
-    while (bufferedLogs.length > 0) {
-      const batch = bufferedLogs.splice(0, BATCH_MAX_SIZE);
-      sendServerLogBatch(batch);
+    if (!projAuthPromise) return;
+    const ok = await projAuthPromise;
+    if (!ok || !session) {
+      batch = [];
+      return;
+    }
+    const liveSession = session;
+    while (batch.length > 0) {
+      const slice = batch.slice(0, BATCH_MAX_SIZE);
+      for (const p of slice) p.session = liveSession;
+      const sent = await sendBatch(slice);
+      if (!sent) {
+        scheduleFlush();
+        break;
+      }
+      batch.splice(0, slice.length);
     }
   } finally {
     flushInFlight = false;
-    if (bufferedLogs.length > 0) {
-      scheduleFlush();
-    }
+    if (batch.length > 0) scheduleFlush();
   }
 }
 
@@ -439,144 +255,115 @@ function scheduleFlush(): void {
   clearFlushTimer();
   flushTimer = setTimeout(() => {
     flushTimer = null;
-    void flushBufferedLogsNow();
+    void flushNow();
   }, BATCH_FLUSH_INTERVAL_MS);
 }
 
-function enqueueLogForBatch(payload: LogPayload): void {
-  bufferedLogs.push(payload);
-  if (bufferedLogs.length >= BATCH_MAX_SIZE) {
-    void flushBufferedLogsNow();
-    return;
-  }
-  scheduleFlush();
-}
-
-async function processServerlogAsync(
-  type: string,
-  message: string,
-  nowMs: number,
-  location?: string,
-  data?: unknown,
-): Promise<void> {
-  ensureNodeEnvLoadedOnce();
-
+function processLog(type: string, message: string, nowMs: number, location?: string, data?: unknown): void {
   const payload: LogPayload = {
     type: normalizeType(type),
     message: String(message ?? ""),
-    session: getOrCreateLocalSession(),
+    session: session ?? LOCAL_FALLBACK_SESSION,
     created_at: createIsoTimestampWithMicroseconds(nowMs),
   };
-  const normalizedLocation = normalizeLocation(location);
-  if (normalizedLocation) {
-    payload.location = normalizedLocation;
-  }
-  const normalizedData = maybeData(data);
-  if (normalizedData) {
-    payload.data = normalizedData;
-  }
+  const loc = normalizeLocation(location);
+  if (loc) payload.location = loc;
+  const d = maybeData(data);
+  if (d) payload.data = d;
 
   try {
-    printLog(payload, resolveStylesForConsolePrint(runtimeStyles));
-  } catch (error: unknown) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    console.error(`auralogger: failed to print log: ${errMsg}`);
+    printLog(payload, resolveStylesForConsolePrint(styles));
+  } catch (err: unknown) {
+    console.error(`auralogger: failed to print log: ${toErrorMessage(err)}`);
   }
 
-  if (!resolvedProjectToken() || !resolvedUserSecret()) {
+  if (!projectToken) return;
+
+  startProjAuthOnce();
+
+  const wasEmpty = batch.length === 0;
+  batch.push(payload);
+  if (batch.length >= BATCH_MAX_SIZE) {
+    void flushNow();
     return;
   }
-
-  await ensureHydratedRuntimeConfig();
-  if (!runtimeProjectId || !runtimeSession) {
-    return;
-  }
-
-  payload.session = runtimeSession;
-  enqueueLogForBatch(payload);
+  if (wasEmpty) scheduleFlush();
 }
 
 export class AuraServer {
   /**
-   * Configure server logging with project token and optional user secret override.
+   * Configure server logging with project token and user secret.
    * Project id, session, and styles are fetched from `POST /api/{project_token}/proj_auth`.
    */
-  static configure(projectToken: string, userSecret?: string): void {
-    overrideProjectToken = projectToken;
-    if (userSecret !== undefined) {
-      overrideUserSecret = userSecret;
-    }
-    hydrateFromSecretPromise = null;
-    clearHydratedRuntimeConfig();
-    resetBufferedLogs();
-    const trimmed = projectToken.trim();
-    if (!trimmed) {
+  static configure(token: string, secret?: string): void {
+    const trimmedToken = typeof token === "string" ? token.trim() : "";
+    const trimmedSecret = typeof secret === "string" ? secret.trim() : "";
+
+    session = null;
+    styles = undefined;
+    projAuthPromise = null;
+    resetBatchState();
+
+    if (!trimmedToken) {
+      projectToken = null;
+      userSecret = null;
+      console.warn(
+        "auralogger: AuraServer.configure called with empty token; continuing in local-only mode.",
+      );
       return;
     }
-    hydrateFromSecretPromise = (async () => {
-      const payload = await fetchProjAuthConfig(trimmed);
-      const projectId = payload.project_id?.trim() ?? "";
-      const session = payload.session?.trim() ?? "";
-      if (!projectId || !session) {
-        throw new Error(
-          "auralogger: proj_auth response missing project id or session.",
-        );
-      }
-      applyProjAuthPayload(payload);
-    })();
+    projectToken = trimmedToken;
+    userSecret = trimmedSecret || null;
+    startProjAuthOnce();
   }
 
-  static async syncFromSecret(projectToken: string, userSecret?: string): Promise<void> {
-    ensureNodeEnvLoadedOnce();
-    if (userSecret !== undefined) {
-      overrideUserSecret = userSecret;
-    }
-    hydrateFromSecretPromise = null;
-    const trimmed = projectToken.trim();
-    if (!trimmed) {
+  static async syncFromSecret(token: string, secret?: string): Promise<void> {
+    const trimmedToken = typeof token === "string" ? token.trim() : "";
+    if (!trimmedToken) {
       throw new Error("AuraServer.syncFromSecret: project token cannot be empty.");
     }
-    clearHydratedRuntimeConfig();
-    const payload = await fetchProjAuthConfig(trimmed);
-    const projectId = payload.project_id?.trim() ?? "";
-    const session = payload.session?.trim() ?? "";
-    if (!projectId || !session) {
-      throw new Error(
-        "AuraServer.syncFromSecret: proj_auth response missing project id or session.",
-      );
+    const trimmedSecret = typeof secret === "string" ? secret.trim() : "";
+    projectToken = trimmedToken;
+    if (trimmedSecret) userSecret = trimmedSecret;
+    session = null;
+    styles = undefined;
+    projAuthPromise = null;
+
+    const payload = await fetchProjAuthConfig(trimmedToken);
+    const pid = payload.project_id?.trim() ?? "";
+    const sess = payload.session?.trim() ?? "";
+    if (!pid || !sess) {
+      throw new Error("AuraServer.syncFromSecret: proj_auth response missing project id or session.");
     }
     applyProjAuthPayload(payload);
+    projAuthPromise = Promise.resolve(true);
   }
 
   static log(type: string, message: string, location?: string, data?: unknown): void {
-    ensureNodeEnvLoadedOnce();
     const nowMs = Date.now();
     deferTask(() => {
-      void processServerlogAsync(type, message, nowMs, location, data).catch(
-        (error: unknown) => {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error(`auralogger: log dispatch failed: ${errorMessage}`);
-        },
-      );
+      try {
+        processLog(type, message, nowMs, location, data);
+      } catch (err: unknown) {
+        console.error(`auralogger: log dispatch failed: ${toErrorMessage(err)}`);
+      }
     });
   }
 
   static async closeSocket(timeoutMs = 1000): Promise<void> {
-    // Drain any pending deferTask callbacks so log() calls made just before
-    // closeSocket() have a chance to enqueue their payloads.
+    // Let queued log() callbacks enqueue first.
     await new Promise<void>((resolve) => deferTask(resolve));
-    // If proj_auth hydration is still in flight, wait for it so that
-    // processServerlogAsync continuations can finish enqueuing.
-    if (hydrateFromSecretPromise) {
-      try { await hydrateFromSecretPromise; } catch { /* ignore */ }
+    if (projAuthPromise) {
+      try {
+        await projAuthPromise;
+      } catch {
+        /* ignore */
+      }
     }
-    // One more tick to let any async continuations unblocked by hydration enqueue.
     await new Promise<void>((resolve) => deferTask(resolve));
-    await flushBufferedLogsNow();
+    await flushNow();
     clearSocketIdleTimer();
-    if (!socket) {
-      return;
-    }
+    if (!socket) return;
 
     const ws = socket;
     if (ws.readyState === WebSocket.CLOSED) {
@@ -584,55 +371,47 @@ export class AuraServer {
       socketUrl = null;
       return;
     }
-
     if (ws.readyState === WebSocket.CONNECTING) {
       await new Promise<void>((resolve) => {
-        const timeout = setTimeout(resolve, timeoutMs);
+        const t = setTimeout(resolve, timeoutMs);
         ws.once("open", () => {
-          clearTimeout(timeout);
+          clearTimeout(t);
           resolve();
         });
         ws.once("error", () => {
-          clearTimeout(timeout);
+          clearTimeout(t);
           resolve();
         });
         ws.once("close", () => {
-          clearTimeout(timeout);
+          clearTimeout(t);
           resolve();
         });
       });
     }
-
-    if (ws.readyState !== WebSocket.OPEN) {
-      return;
-    }
+    if (ws.readyState !== WebSocket.OPEN) return;
 
     await new Promise<void>((resolve) => {
-      let settled = false;
-      const done = () => {
-        if (settled) {
-          return;
+      let done = false;
+      const fin = () => {
+        if (!done) {
+          done = true;
+          resolve();
         }
-        settled = true;
-        resolve();
       };
-
-      const timeout = setTimeout(done, timeoutMs);
-
+      const t = setTimeout(fin, timeoutMs);
       ws.once("close", () => {
-        clearTimeout(timeout);
-        done();
+        clearTimeout(t);
+        fin();
       });
       ws.once("error", () => {
-        clearTimeout(timeout);
-        done();
+        clearTimeout(t);
+        fin();
       });
-
       try {
         ws.close();
       } catch {
-        clearTimeout(timeout);
-        done();
+        clearTimeout(t);
+        fin();
       }
     });
   }
