@@ -55,11 +55,11 @@ var require_backend_origin = __commonJS({
     }
     function buildProjAuthUrl(apiBaseUrl, projectToken) {
       const base = trimTrailingSlash(apiBaseUrl.trim());
-      return `${base}/api/${encodeURIComponent(projectToken.trim())}/proj_auth`;
+      return `${base}/api/${projectToken.trim()}/proj_auth`;
     }
     function buildProjectLogsUrl(apiBaseUrl, projectToken) {
       const base = trimTrailingSlash(apiBaseUrl.trim());
-      return `${base}/api/${encodeURIComponent(projectToken.trim())}/logs`;
+      return `${base}/api/${projectToken.trim()}/logs`;
     }
   }
 });
@@ -1707,14 +1707,65 @@ var require_log_styles = __commonJS({
     exports.styleMapFromConfigEntries = styleMapFromConfigEntries;
     exports.resolveLogStyleSpec = resolveLogStyleSpec;
     exports.DEFAULT_LOG_STYLE_SPEC = {
-      icon: "\u{1F5D2}\uFE0F",
-      "type-color": [23, 230, 154],
+      icon: "\u{1F539}",
+      "type-color": [200, 160, 255],
       background: [0, 0, 0],
       borderColor: [255, 255, 255],
       "location-color": [63, 102, 191],
-      "time-color": [129, 68, 235],
-      "message-color": [235, 68, 210],
-      "text-color": [255, 255, 255]
+      "time-color": [210, 200, 255],
+      "message-color": [220, 200, 255],
+      "text-color": [250, 245, 255]
+    };
+    var BUILTIN_TYPE_STYLE_OVERRIDES = {
+      ERROR: {
+        icon: "\u274C",
+        "type-color": [255, 80, 80],
+        "message-color": [255, 140, 140],
+        "text-color": [255, 255, 255],
+        "time-color": [200, 200, 200]
+      },
+      FAIL: {
+        icon: "\u{1F4A5}",
+        "type-color": [255, 40, 120],
+        "message-color": [255, 120, 180],
+        "text-color": [255, 255, 255],
+        "time-color": [200, 200, 200]
+      },
+      SUCCESS: {
+        icon: "\u2705",
+        "type-color": [0, 255, 200],
+        "message-color": [150, 255, 230],
+        "text-color": [245, 255, 250],
+        "time-color": [200, 255, 230]
+      },
+      PASS: {
+        icon: "\u2714\uFE0F",
+        "type-color": [0, 255, 160],
+        "message-color": [140, 255, 210],
+        "text-color": [245, 255, 250],
+        "time-color": [200, 255, 220]
+      },
+      WARNING: {
+        icon: "\u26A0\uFE0F",
+        "type-color": [255, 220, 0],
+        "message-color": [255, 240, 120],
+        "text-color": [255, 255, 255],
+        "time-color": [255, 230, 150]
+      },
+      INFO: {
+        icon: "\u2139\uFE0F",
+        "type-color": [80, 200, 255],
+        "message-color": [160, 230, 255],
+        "text-color": [245, 250, 255],
+        "time-color": [180, 220, 255]
+      },
+      DEFAULT: {
+        icon: "\u{1F539}",
+        "type-color": [200, 160, 255],
+        "message-color": [220, 200, 255],
+        "text-color": [250, 245, 255],
+        "time-color": [210, 200, 255]
+      }
     };
     var COLOR_KEYS = [
       "type-color",
@@ -1727,6 +1778,13 @@ var require_log_styles = __commonJS({
     ];
     function cloneDefaultSpec() {
       return JSON.parse(JSON.stringify(exports.DEFAULT_LOG_STYLE_SPEC));
+    }
+    function cloneBuiltinStyleMap() {
+      const entries = Object.entries(BUILTIN_TYPE_STYLE_OVERRIDES).map(([type, spec]) => [
+        type,
+        { ...cloneDefaultSpec(), ...spec }
+      ]);
+      return Object.fromEntries(entries);
     }
     function isPlainObject(value) {
       return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -1861,9 +1919,9 @@ var require_log_styles = __commonJS({
       return buildStyleEntriesFromApi(rows);
     }
     function styleMapFromConfigEntries(entries) {
-      const byType = {};
+      const byType = cloneBuiltinStyleMap();
+      byType.default = cloneDefaultSpec();
       if (!Array.isArray(entries)) {
-        byType.default = cloneDefaultSpec();
         return byType;
       }
       for (const item of entries) {
@@ -1872,6 +1930,7 @@ var require_log_styles = __commonJS({
         for (const [k, v] of Object.entries(item)) {
           if (isPlainObject(v)) {
             byType[k] = v;
+            byType[k.toUpperCase()] = v;
           }
         }
       }
@@ -1883,8 +1942,8 @@ var require_log_styles = __commonJS({
     function resolveLogStyleSpec(logType, configStyles) {
       const map = styleMapFromConfigEntries(configStyles);
       const base = map.default ?? cloneDefaultSpec();
-      const t = typeof logType === "string" && logType.trim() ? logType.trim() : "unknown";
-      const specific = map[t];
+      const t = typeof logType === "string" ? logType.trim() : "";
+      const specific = map[t] ?? map[t.toUpperCase()] ?? map[t.toLowerCase()] ?? map.DEFAULT;
       const merged = !specific ? { ...base } : { ...base, ...specific };
       return normalizeSpecColors(merged, base);
     }
@@ -1920,7 +1979,12 @@ var require_log_print = __commonJS({
       const type = typeof log.type === "string" ? log.type : String(log.type ?? "");
       const loc = String(log.location ?? "");
       const msg = String(log.message ?? "");
-      console.log(`${ts} ${type} ${loc}`.trim(), msg);
+      const data = log.data == null ? "" : String(log.data);
+      const lines = [`${ts}    ${loc}`.trim(), `\u{1F5D2}\uFE0F ${type} ${msg}`.trim()];
+      if (data.trim()) {
+        lines.push(data);
+      }
+      console.log(lines.join("\n"));
     }
     function rgbPaint(rgb, text) {
       const s = String(text ?? "");
@@ -1938,8 +2002,23 @@ var require_log_print = __commonJS({
       try {
         const spec = (0, log_styles_1.resolveLogStyleSpec)(typeof log.type === "string" ? log.type : "", configStyles);
         const loc = String(log.location ?? "");
-        console.log(rgbPaint(spec["time-color"], formatCreatedAtTimeOnly(log.created_at)), spec.icon, rgbPaint(spec["type-color"], log.type), rgbPaint(spec["location-color"], loc));
-        console.log(rgbPaint(spec["message-color"], String(log.message ?? "")));
+        const line1 = [
+          chalk_1.default.dim(rgbPaint(spec["time-color"], formatCreatedAtTimeOnly(log.created_at))),
+          rgbPaint(spec["location-color"], loc)
+        ].join("    ").trim();
+        const type = typeof log.type === "string" ? log.type : String(log.type ?? "");
+        const icon = String(spec.icon ?? "").trim();
+        const iconAndType = [icon, rgbPaint(spec["type-color"], type)].filter((s) => String(s).trim()).join(" ");
+        const line2 = [
+          iconAndType,
+          rgbPaint(spec["message-color"], String(log.message ?? ""))
+        ].join(" ").trim();
+        const data = String(log.data ?? "");
+        const lines = [line1, line2];
+        if (data.trim()) {
+          lines.push(chalk_1.default.dim(rgbPaint(spec["text-color"], data)));
+        }
+        console.log(lines.join("\n"));
       } catch {
         printLogPlain(log);
       }
@@ -1961,40 +2040,55 @@ var require_client_log = __commonJS({
     var log_styles_1 = require_log_styles();
     var UNKNOWN_TYPE = "unknown";
     var LOCAL_FALLBACK_SESSION = "auralogger-local-session";
-    var overrideProjectToken;
-    var runtimeProjectId = null;
-    var runtimeSession = null;
-    var runtimeStyles = void 0;
-    var hydrateFromSecretPromise = null;
-    var localSessionId = null;
+    var BATCH_FLUSH_INTERVAL_MS = 30;
+    var BATCH_MAX_SIZE = 30;
+    var PROJ_AUTH_RETRY_ATTEMPTS = 3;
+    var PROJ_AUTH_RETRY_DELAY_MS = 500;
+    function isDebugEnabled() {
+      const g = globalThis;
+      if (g.AURALOGGER_DEBUG === true || g.AURALOGGER_DEBUG === "1")
+        return true;
+      if (typeof process !== "undefined" && process.env) {
+        const v = process.env.AURALOGGER_DEBUG;
+        if (typeof v === "string" && v.trim() && v.trim() !== "0" && v.trim().toLowerCase() !== "false") {
+          return true;
+        }
+      }
+      return false;
+    }
+    function trace(event, details) {
+      if (!isDebugEnabled())
+        return;
+      if (details)
+        console.log(`auralogger: [AuraClient] ${event}`, details);
+      else
+        console.log(`auralogger: [AuraClient] ${event}`);
+    }
+    var projectToken = null;
+    var session = null;
+    var styles = void 0;
+    var projAuthPromise = null;
     var socket = null;
     var socketUrl = null;
     var socketIdleTimer = null;
-    var warnedMissingProjectToken = false;
-    var warnedMissingProjectId = false;
-    function clearSocketIdleTimer() {
-      if (socketIdleTimer !== null) {
-        clearTimeout(socketIdleTimer);
-        socketIdleTimer = null;
-      }
-    }
-    function bumpSocketIdleTimer(ws) {
-      const { OPEN } = wsStates();
-      clearSocketIdleTimer();
-      socketIdleTimer = setTimeout(() => {
-        socketIdleTimer = null;
-        if (socket !== ws || ws.readyState !== OPEN) {
-          return;
-        }
-        try {
-          ws.close();
-        } catch {
-        }
-      }, socket_idle_close_1.DEFAULT_SOCKET_IDLE_CLOSE_MS);
-    }
+    var batch = [];
+    var flushTimer = null;
+    var flushInFlight = false;
+    var warnedMissingWebSocket = false;
     var deferTask = typeof setImmediate === "function" ? (task) => setImmediate(task) : (task) => setTimeout(task, 0);
-    function padMicros(microseconds) {
-      return String(microseconds).padStart(6, "0");
+    function wsStates() {
+      const W = globalThis.WebSocket;
+      return {
+        CONNECTING: W?.CONNECTING ?? 0,
+        OPEN: W?.OPEN ?? 1,
+        CLOSED: W?.CLOSED ?? 3
+      };
+    }
+    function toErrorMessage(err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+    function padMicros(us) {
+      return String(us).padStart(6, "0");
     }
     function createIsoTimestampWithMicroseconds(epochMs) {
       const d = new Date(epochMs);
@@ -2006,164 +2100,146 @@ var require_client_log = __commonJS({
       return type.trim() ? type.trim() : UNKNOWN_TYPE;
     }
     function normalizeLocation(location) {
-      if (typeof location !== "string") {
+      if (typeof location !== "string")
         return void 0;
-      }
       const trimmed = location.trim();
       return trimmed || void 0;
-    }
-    function asNonEmptyString(value) {
-      if (typeof value !== "string") {
-        return void 0;
-      }
-      const trimmed = value.trim();
-      return trimmed.length > 0 ? trimmed : void 0;
     }
     function isPlainObject(value) {
       return typeof value === "object" && value !== null && !Array.isArray(value);
     }
     function maybeData(data) {
-      if (data === null || data === void 0) {
+      if (data === null || data === void 0)
         return void 0;
-      }
-      if (typeof data === "string") {
+      if (typeof data === "string")
         return data;
-      }
-      if (!isPlainObject(data)) {
+      if (!isPlainObject(data))
         return void 0;
-      }
       try {
         return JSON.stringify(data);
       } catch {
         return void 0;
       }
     }
-    function isPlainAuthResponse(value) {
-      return value !== null && typeof value === "object";
+    function isPlainAuthResponse(v) {
+      return v !== null && typeof v === "object";
     }
-    async function fetchProjAuthConfig(projectToken) {
-      const response = await fetch((0, backend_origin_1.buildProjAuthUrl)((0, backend_origin_1.resolveApiBaseUrl)(), projectToken), {
-        method: "POST"
-      }).catch((error) => {
-        const msg = error instanceof Error ? error.message : String(error);
-        throw new Error(`Can't reach Auralogger right now \u2014 check your network or VPN, then try again. (${msg})`);
-      });
+    async function fetchProjAuthOnce(token) {
+      let response;
+      try {
+        response = await fetch((0, backend_origin_1.buildProjAuthUrl)((0, backend_origin_1.resolveApiBaseUrl)(), token), { method: "POST" });
+      } catch (err) {
+        trace("proj_auth.network_error", { message: toErrorMessage(err) });
+        throw err instanceof Error ? err : new Error(String(err));
+      }
       if (!response.ok) {
-        throw new Error(await (0, http_utils_1.parseErrorBody)(response));
+        const body = await (0, http_utils_1.parseErrorBody)(response).catch(() => "Request failed.");
+        trace("proj_auth.http_error", { status: response.status, body });
+        throw new Error(`proj_auth HTTP ${response.status}: ${body}`);
       }
-      const authResponse = await response.json().catch(() => {
-        throw new Error("Got a reply, but it wasn\u2019t readable JSON. Try again in a moment.");
-      });
-      if (!isPlainAuthResponse(authResponse)) {
-        throw new Error("The reply didn\u2019t look right. Run auralogger init again or double-check your project token.");
-      }
-      return {
-        project_id: authResponse.project_id ?? null,
-        session: authResponse.session ?? null,
-        styles: (0, log_styles_1.buildStyleEntriesFromProjAuth)(authResponse.styles)
-      };
-    }
-    function applyProjAuthPayload(payload) {
-      runtimeProjectId = payload.project_id?.trim() ?? null;
-      runtimeSession = payload.session?.trim() ?? null;
-      runtimeStyles = payload.styles;
-      localSessionId = null;
-    }
-    function clearHydratedRuntimeConfig() {
-      runtimeProjectId = null;
-      runtimeSession = null;
-      runtimeStyles = void 0;
-    }
-    async function ensureHydratedRuntimeConfig() {
-      const projectToken = resolvedProjectToken();
-      if (!projectToken) {
-        return;
-      }
-      if (runtimeProjectId && runtimeSession && runtimeStyles !== void 0) {
-        return;
-      }
-      if (!hydrateFromSecretPromise) {
-        hydrateFromSecretPromise = (async () => {
-          const token = resolvedProjectToken();
-          if (!token) {
-            return;
-          }
-          const payload = await fetchProjAuthConfig(token);
-          const projectId = payload.project_id?.trim() ?? "";
-          const session = payload.session?.trim() ?? "";
-          if (!projectId || !session) {
-            throw new Error("auralogger: proj_auth response missing project id or session.");
-          }
-          applyProjAuthPayload(payload);
-        })();
-      }
+      let data;
       try {
-        await hydrateFromSecretPromise;
-      } catch (error) {
-        hydrateFromSecretPromise = null;
-        const msg = error instanceof Error ? error.message : String(error);
-        console.error(`auralogger: could not load project config from API: ${msg}`);
+        data = await response.json();
+      } catch {
+        trace("proj_auth.non_json");
+        throw new Error("proj_auth replied with non-JSON");
       }
+      if (!isPlainAuthResponse(data)) {
+        trace("proj_auth.bad_shape");
+        throw new Error("proj_auth response shape unexpected");
+      }
+      const pid = typeof data.project_id === "string" ? data.project_id.trim() : "";
+      const sess = typeof data.session === "string" ? data.session.trim() : "";
+      if (!pid || !sess) {
+        trace("proj_auth.invalid_response", { hasProjectId: !!pid, hasSession: !!sess });
+        throw new Error("proj_auth response missing project id or session");
+      }
+      session = sess;
+      styles = (0, log_styles_1.buildStyleEntriesFromProjAuth)(data.styles);
+      trace("proj_auth.ok", { session: sess });
+      return true;
     }
-    function toErrorMessage(error) {
-      return error instanceof Error ? error.message : String(error);
-    }
-    function sendPayloadOverSocket(ws, sendPayload, onSendError) {
-      const nodeStyleSocket = typeof ws.on === "function";
-      if (nodeStyleSocket) {
+    async function fetchProjAuth(token) {
+      trace("proj_auth.start", { hasToken: !!token });
+      let lastError = null;
+      for (let attempt = 1; attempt <= PROJ_AUTH_RETRY_ATTEMPTS; attempt += 1) {
         try {
-          ws.send(sendPayload, (error) => {
-            if (!error) {
-              return;
-            }
-            onSendError(error);
+          return await fetchProjAuthOnce(token);
+        } catch (err) {
+          lastError = err;
+          trace("proj_auth.attempt_failed", {
+            attempt,
+            max: PROJ_AUTH_RETRY_ATTEMPTS,
+            message: toErrorMessage(err)
           });
-        } catch (error) {
-          onSendError(error);
+          if (attempt < PROJ_AUTH_RETRY_ATTEMPTS) {
+            await new Promise((r) => setTimeout(r, PROJ_AUTH_RETRY_DELAY_MS));
+          }
         }
+      }
+      console.warn(`auralogger: proj_auth failed after ${PROJ_AUTH_RETRY_ATTEMPTS} attempts; local-only logging (${toErrorMessage(lastError)})`);
+      return false;
+    }
+    function startProjAuthOnce() {
+      if (projAuthPromise || !projectToken)
+        return;
+      const token = projectToken;
+      trace("proj_auth.once.start", { tokenPresent: true });
+      projAuthPromise = fetchProjAuth(token).catch((err) => {
+        console.error(`auralogger: proj_auth failed: ${toErrorMessage(err)}`);
+        trace("proj_auth.once.error", { message: toErrorMessage(err) });
+        return false;
+      }).then((ok) => {
+        if (!ok)
+          projAuthPromise = null;
+        return ok;
+      });
+    }
+    function clearSocketIdleTimer() {
+      if (socketIdleTimer !== null) {
+        clearTimeout(socketIdleTimer);
+        socketIdleTimer = null;
+        trace("socket_idle_timer.cleared");
+      }
+    }
+    function clearFlushTimer() {
+      if (flushTimer !== null) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+        trace("flush_timer.cleared");
+      }
+    }
+    function bumpSocketIdleTimer(ws) {
+      const { OPEN } = wsStates();
+      clearSocketIdleTimer();
+      socketIdleTimer = setTimeout(() => {
+        socketIdleTimer = null;
+        if (socket !== ws || ws.readyState !== OPEN)
+          return;
+        trace("socket_idle_timer.fired_close");
+        try {
+          ws.close();
+        } catch {
+        }
+      }, socket_idle_close_1.DEFAULT_SOCKET_IDLE_CLOSE_MS);
+      trace("socket_idle_timer.set", { ms: socket_idle_close_1.DEFAULT_SOCKET_IDLE_CLOSE_MS });
+    }
+    function socketOnce(ws, event, handler) {
+      if (typeof ws.once === "function") {
+        ws.once(event, handler);
         return;
       }
-      try {
-        ws.send(sendPayload);
-      } catch (error) {
-        onSendError(error);
+      if (typeof ws.addEventListener === "function") {
+        ws.addEventListener(event, () => handler(), { once: true });
       }
     }
-    function getOrCreateLocalSession() {
-      if (localSessionId) {
-        return localSessionId;
-      }
-      localSessionId = LOCAL_FALLBACK_SESSION;
-      return localSessionId;
-    }
-    function resolvedProjectToken() {
-      if (overrideProjectToken !== void 0) {
-        return asNonEmptyString(overrideProjectToken);
-      }
-      return (0, env_config_1.getResolvedProjectToken)();
-    }
-    function getProjectId() {
-      return runtimeProjectId;
-    }
-    function getSession() {
-      return runtimeSession ?? getOrCreateLocalSession();
-    }
-    function buildWsUrl(projectToken) {
-      return `${(0, backend_origin_1.resolveWsBaseUrl)()}/${encodeURIComponent(projectToken)}/create_browser_logs`;
-    }
-    function wsStates() {
-      const W = globalThis.WebSocket;
-      return {
-        CONNECTING: W?.CONNECTING ?? 0,
-        OPEN: W?.OPEN ?? 1,
-        CLOSED: W?.CLOSED ?? 3
-      };
-    }
-    function attachAuraClientSocketLifecycle(ws, url) {
+    function attachLifecycle(ws, url) {
       const onOpen = () => {
+        trace("socket.event.open");
         bumpSocketIdleTimer(ws);
       };
       const onClose = () => {
+        trace("socket.event.close");
         clearSocketIdleTimer();
         if (socket === ws) {
           socket = null;
@@ -2172,8 +2248,9 @@ var require_client_log = __commonJS({
       };
       const onErr = (...args) => {
         const first = args[0];
-        const message = first instanceof Error ? first.message : String(first ?? "error");
-        console.error(`auralogger: [AuraClient] websocket error \u2014 ${url} \u2014 ${message}`);
+        const msg = first instanceof Error ? first.message : String(first ?? "error");
+        console.error(`auralogger: [AuraClient] websocket error \u2014 ${url} \u2014 ${msg}`);
+        trace("socket.event.error", { message: msg, url });
       };
       if (typeof ws.on === "function") {
         ws.on("open", onOpen);
@@ -2185,70 +2262,34 @@ var require_client_log = __commonJS({
         ws.addEventListener("open", () => onOpen());
         ws.addEventListener("close", () => onClose());
         ws.addEventListener("error", (ev) => onErr(ev));
-        return;
       }
-      console.warn("auralogger: [AuraClient] cannot attach lifecycle handlers (unrecognized WebSocket implementation).");
-    }
-    function socketOnce(ws, event, handler) {
-      if (typeof ws.once === "function") {
-        ws.once(event, handler);
-        return;
-      }
-      if (typeof ws.addEventListener === "function") {
-        const wrapped = (...args) => handler(...args);
-        ws.addEventListener(event, wrapped, { once: true });
-        return;
-      }
-      console.error(`auralogger: [AuraClient] cannot subscribe to websocket "${event}" (missing .once / addEventListener).`);
     }
     function createWebSocket(url) {
-      const NativeWebSocket = globalThis.WebSocket;
-      if (typeof NativeWebSocket === "function") {
-        try {
-          return new NativeWebSocket(url);
-        } catch (error) {
-          const message = toErrorMessage(error);
-          console.error(`auralogger: could not open websocket to create_browser_logs. ${message}`);
-          return null;
+      const Ctor = globalThis.WebSocket;
+      if (typeof Ctor !== "function") {
+        if (!warnedMissingWebSocket) {
+          warnedMissingWebSocket = true;
+          console.error("auralogger: WebSocket is not available in this browser environment.");
+          trace("socket.missing_websocket_ctor");
         }
-      }
-      console.error("auralogger: WebSocket is not available. Use Node and set globalThis.WebSocket from the ws package before calling AuraClient.log.");
-      return null;
-    }
-    function connectSocket(url) {
-      const ws = createWebSocket(url);
-      if (!ws) {
         return null;
       }
-      attachAuraClientSocketLifecycle(ws, url);
-      return ws;
+      try {
+        trace("socket.ctor", { url });
+        return new Ctor(url);
+      } catch (err) {
+        console.error(`auralogger: could not open websocket. ${toErrorMessage(err)}`);
+        trace("socket.ctor_error", { message: toErrorMessage(err) });
+        return null;
+      }
     }
-    async function ensureSocket() {
+    function openSocketIfNeeded() {
+      if (!projectToken)
+        return null;
       const { CONNECTING, OPEN, CLOSED } = wsStates();
-      const projectToken = resolvedProjectToken();
-      if (!projectToken) {
-        if (!warnedMissingProjectToken) {
-          warnedMissingProjectToken = true;
-          console.error("auralogger: missing project token. Call AuraClient.configure( projectToken ) before logging.");
-        }
-        return null;
-      }
-      warnedMissingProjectToken = false;
-      await ensureHydratedRuntimeConfig();
-      const projectId = getProjectId();
-      if (!projectId) {
-        if (!warnedMissingProjectId) {
-          warnedMissingProjectId = true;
-          console.error("auralogger: proj_auth did not return project id. Verify your project token and backend config.");
-        }
-        return null;
-      }
-      warnedMissingProjectId = false;
-      const url = buildWsUrl(projectToken);
-      if (socket && socketUrl === url && socket.readyState === OPEN) {
-        return socket;
-      }
-      if (socket && socketUrl === url && socket.readyState === CONNECTING) {
+      const url = `${(0, backend_origin_1.resolveWsBaseUrl)()}/${projectToken}/create_browser_logs`;
+      if (socket && socketUrl === url && (socket.readyState === OPEN || socket.readyState === CONNECTING)) {
+        trace("socket.reuse", { readyState: socket.readyState });
         return socket;
       }
       if (socket && socket.readyState !== CLOSED) {
@@ -2258,165 +2299,328 @@ var require_client_log = __commonJS({
         } catch {
         }
       }
-      const connected = connectSocket(url);
-      if (!connected) {
+      const fresh = createWebSocket(url);
+      if (!fresh) {
         socket = null;
         socketUrl = null;
         return null;
       }
-      socket = connected;
+      trace("socket.open", { url });
+      attachLifecycle(fresh, url);
+      socket = fresh;
       socketUrl = url;
       return socket;
     }
-    async function processClientlogAsync(type, message, nowMs, location, data) {
-      const { CONNECTING, OPEN } = wsStates();
-      await ensureHydratedRuntimeConfig();
+    function sendOverSocket(ws, payload, onErr) {
+      const nodeStyle = typeof ws.on === "function";
+      try {
+        if (nodeStyle) {
+          ws.send(payload, (err) => {
+            if (err)
+              onErr(err);
+          });
+        } else {
+          ws.send(payload);
+        }
+      } catch (err) {
+        onErr(err);
+      }
+    }
+    function dropCurrentSocket() {
+      const { CLOSED } = wsStates();
+      if (socket && socket.readyState !== CLOSED) {
+        clearSocketIdleTimer();
+        try {
+          socket.close();
+        } catch {
+        }
+      }
+      socket = null;
+      socketUrl = null;
+    }
+    async function sendSerializedOverSocket(ws, serialized, onErr) {
+      const { OPEN, CONNECTING } = wsStates();
+      if (ws.readyState === OPEN) {
+        bumpSocketIdleTimer(ws);
+        sendOverSocket(ws, serialized, onErr);
+        trace("send_batch.sent", { mode: "open" });
+        return;
+      }
+      if (ws.readyState === CONNECTING) {
+        await new Promise((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (settled)
+              return;
+            settled = true;
+            resolve();
+          };
+          socketOnce(ws, "open", () => {
+            bumpSocketIdleTimer(ws);
+            sendOverSocket(ws, serialized, onErr);
+            trace("send_batch.sent", { mode: "connecting->open" });
+            finish();
+          });
+          socketOnce(ws, "error", () => {
+            onErr(new Error("websocket errored while connecting"));
+            finish();
+          });
+          socketOnce(ws, "close", () => {
+            onErr(new Error("websocket closed while connecting"));
+            finish();
+          });
+        });
+        return;
+      }
+      onErr(new Error(`websocket in bad state (readyState=${ws.readyState})`));
+    }
+    async function sendBatch(payloads) {
+      trace("send_batch.start", { count: payloads.length });
+      let serialized;
+      try {
+        serialized = JSON.stringify(payloads);
+      } catch (err) {
+        console.error(`auralogger: failed to serialize log batch: ${toErrorMessage(err)}`);
+        trace("send_batch.serialize_error", { message: toErrorMessage(err) });
+        return false;
+      }
+      const ws = openSocketIfNeeded();
+      if (!ws)
+        return false;
+      let sendError = null;
+      await sendSerializedOverSocket(ws, serialized, (err) => {
+        sendError = err;
+      });
+      if (!sendError)
+        return true;
+      console.warn(`auralogger: websocket send failed (${toErrorMessage(sendError)}); retrying with fresh socket (2/2)...`);
+      trace("send_batch.retry.start", { message: toErrorMessage(sendError) });
+      dropCurrentSocket();
+      const retryWs = openSocketIfNeeded();
+      if (!retryWs) {
+        console.error("auralogger: websocket unavailable after retry; dropping batch.");
+        trace("send_batch.retry.no_socket");
+        return false;
+      }
+      let retryError = null;
+      await sendSerializedOverSocket(retryWs, serialized, (err) => {
+        retryError = err;
+      });
+      if (retryError) {
+        console.error(`auralogger: websocket send failed after retry: ${toErrorMessage(retryError)}`);
+        trace("send_batch.retry.failed", { message: toErrorMessage(retryError) });
+        dropCurrentSocket();
+        return false;
+      }
+      trace("send_batch.retry.sent");
+      return true;
+    }
+    async function flushNow() {
+      if (flushInFlight)
+        return;
+      flushInFlight = true;
+      clearFlushTimer();
+      trace("flush.start", { queued: batch.length });
+      try {
+        if (!projAuthPromise)
+          return;
+        const ok = await projAuthPromise;
+        if (!ok || !session) {
+          batch = [];
+          trace("flush.proj_auth_failed_drop_batch", { ok, hasSession: !!session });
+          return;
+        }
+        const liveSession = session;
+        while (batch.length > 0) {
+          const slice = batch.slice(0, BATCH_MAX_SIZE);
+          for (const p of slice)
+            p.session = liveSession;
+          trace("flush.slice", { slice: slice.length, remainingBefore: batch.length });
+          const sent = await sendBatch(slice);
+          if (!sent) {
+            batch.splice(0, slice.length);
+            trace("flush.send_failed_drop_slice", { dropped: slice.length, remaining: batch.length });
+            if (batch.length > 0)
+              scheduleFlush();
+            return;
+          }
+          batch.splice(0, slice.length);
+          trace("flush.slice_done", { remainingAfter: batch.length });
+        }
+      } finally {
+        flushInFlight = false;
+        trace("flush.end", { queued: batch.length });
+      }
+    }
+    function scheduleFlush() {
+      clearFlushTimer();
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        trace("flush_timer.fire");
+        void flushNow();
+      }, BATCH_FLUSH_INTERVAL_MS);
+      trace("flush_timer.set", { ms: BATCH_FLUSH_INTERVAL_MS });
+    }
+    function processLog(type, message, nowMs, location, data) {
+      trace("process_log.start", {
+        type,
+        messageLen: String(message ?? "").length,
+        hasLocation: typeof location === "string" && !!location.trim(),
+        hasData: data !== null && data !== void 0,
+        nowMs
+      });
       const payload = {
         type: normalizeType(type),
         message: String(message ?? ""),
-        session: getSession(),
+        session: session ?? LOCAL_FALLBACK_SESSION,
         created_at: createIsoTimestampWithMicroseconds(nowMs)
       };
-      const normalizedLocation = normalizeLocation(location);
-      if (normalizedLocation) {
-        payload.location = normalizedLocation;
-      }
-      const normalizedData = maybeData(data);
-      if (normalizedData) {
-        payload.data = normalizedData;
-      }
-      deferTask(() => {
-        (0, log_print_1.printLog)(payload, (0, env_config_1.resolveStylesForConsolePrint)(runtimeStyles));
-      });
+      const loc = normalizeLocation(location);
+      if (loc)
+        payload.location = loc;
+      const d = maybeData(data);
+      if (d)
+        payload.data = d;
       try {
-        const ws = await ensureSocket();
-        if (!ws) {
-          return;
-        }
-        if (ws.readyState === OPEN) {
-          bumpSocketIdleTimer(ws);
-        }
-        let sendPayload = "";
-        try {
-          sendPayload = JSON.stringify(payload);
-        } catch (error) {
-          const errMsg = toErrorMessage(error);
-          console.error(`auralogger: failed to serialize log payload: ${errMsg}`);
-          console.error("auralogger: failed payload:", payload);
-          return;
-        }
-        if (ws.readyState === OPEN) {
-          sendPayloadOverSocket(ws, sendPayload, (error) => {
-            const sendErr = toErrorMessage(error);
-            console.error(`auralogger: websocket send failed: ${sendErr}`);
-            console.error("auralogger: failed payload:", payload);
-          });
-          return;
-        }
-        if (ws.readyState === CONNECTING) {
-          socketOnce(ws, "open", () => {
-            bumpSocketIdleTimer(ws);
-            sendPayloadOverSocket(ws, sendPayload, (error) => {
-              const sendErr = toErrorMessage(error);
-              console.error(`auralogger: websocket send failed: ${sendErr}`);
-              console.error("auralogger: failed payload:", payload);
-            });
-          });
-          socketOnce(ws, "error", () => {
-            console.error("auralogger: websocket unavailable; log payload:", payload);
-          });
-          return;
-        }
-        console.error("auralogger: websocket unavailable; log payload:", payload);
-      } catch (error) {
-        const sendErr = toErrorMessage(error);
-        console.error(`auralogger: websocket dispatch failed: ${sendErr}`);
-        console.error("auralogger: failed payload:", payload);
+        (0, log_print_1.printLog)(payload, (0, env_config_1.resolveStylesForConsolePrint)(styles));
+        trace("process_log.printed", { session: payload.session });
+      } catch (err) {
+        console.error(`auralogger: failed to print log: ${toErrorMessage(err)}`);
+        trace("process_log.print_error", { message: toErrorMessage(err) });
       }
+      if (!projectToken)
+        return;
+      startProjAuthOnce();
+      const wasEmpty = batch.length === 0;
+      batch.push(payload);
+      trace("batch.push", { queued: batch.length, wasEmpty });
+      if (batch.length >= BATCH_MAX_SIZE) {
+        trace("batch.max_reached_flush_now", { max: BATCH_MAX_SIZE });
+        void flushNow();
+        return;
+      }
+      if (wasEmpty)
+        scheduleFlush();
     }
     var AuraClient = class {
       /**
-       * @param projectToken Project token string, or `{ projectToken }` (object form is accepted for convenience).
+       * @param projectToken Project token string, or `{ projectToken }` (object form accepted for convenience).
        */
-      static configure(projectToken) {
-        const raw = typeof projectToken === "string" ? projectToken : projectToken?.projectToken;
-        const token = typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
-        if (!token) {
-          throw new Error("auralogger: projectToken cannot be empty.");
-        }
-        overrideProjectToken = token;
-        hydrateFromSecretPromise = null;
-        clearHydratedRuntimeConfig();
-        localSessionId = null;
-        warnedMissingProjectToken = false;
-        warnedMissingProjectId = false;
-      }
-      static log(type, message, location, data) {
-        const nowMs = Date.now();
-        deferTask(() => {
-          void processClientlogAsync(type, message, nowMs, location, data).catch((error) => {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error(`auralogger: log dispatch failed: ${errorMessage}`);
-          });
+      static configure(input) {
+        trace("configure.enter", {
+          inputType: typeof input,
+          tokenPresent: !!(typeof input === "string" ? input.trim() : String(input?.projectToken ?? "").trim())
         });
-      }
-      static async closeSocket(timeoutMs = 1e3) {
-        clearSocketIdleTimer();
-        if (!socket) {
+        const raw = typeof input === "string" ? input : input?.projectToken;
+        const token = typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
+        session = null;
+        styles = void 0;
+        projAuthPromise = null;
+        batch = [];
+        clearFlushTimer();
+        flushInFlight = false;
+        warnedMissingWebSocket = false;
+        if (!token) {
+          projectToken = null;
+          console.warn("auralogger: AuraClient.configure called with empty token; continuing in local-only mode.");
+          trace("configure.local_only");
           return;
         }
+        projectToken = token;
+        startProjAuthOnce();
+        trace("configure.ok");
+      }
+      static log(type, message, location, data) {
+        trace("log.enter", {
+          type,
+          messageLen: String(message ?? "").length,
+          hasLocation: typeof location === "string" && !!location.trim(),
+          hasData: data !== null && data !== void 0
+        });
+        const nowMs = Date.now();
+        trace("log.timestamp", { nowMs });
+        deferTask(() => {
+          try {
+            trace("log.dispatch.start");
+            processLog(type, message, nowMs, location, data);
+            trace("log.dispatch.done");
+          } catch (err) {
+            console.error(`auralogger: log dispatch failed: ${toErrorMessage(err)}`);
+            trace("log.dispatch.error", { message: toErrorMessage(err) });
+          } finally {
+            trace("log.dispatch.finally");
+          }
+        });
+        trace("log.defer_scheduled");
+      }
+      static async closeSocket(timeoutMs = 1e3) {
+        trace("close_socket.enter", { timeoutMs });
+        await new Promise((resolve) => deferTask(resolve));
+        if (projAuthPromise) {
+          try {
+            await projAuthPromise;
+          } catch {
+          }
+        }
+        await new Promise((resolve) => deferTask(resolve));
+        await flushNow();
+        clearSocketIdleTimer();
+        if (!socket)
+          return;
         const { CONNECTING, OPEN, CLOSED } = wsStates();
         const ws = socket;
         if (ws.readyState === CLOSED) {
           socket = null;
           socketUrl = null;
+          trace("close_socket.socket_already_closed");
           return;
         }
         if (ws.readyState === CONNECTING) {
+          trace("close_socket.wait_connecting");
           await new Promise((resolve) => {
-            const timeout = setTimeout(resolve, timeoutMs);
+            const t = setTimeout(resolve, timeoutMs);
             socketOnce(ws, "open", () => {
-              clearTimeout(timeout);
+              clearTimeout(t);
               resolve();
             });
             socketOnce(ws, "error", () => {
-              clearTimeout(timeout);
+              clearTimeout(t);
               resolve();
             });
             socketOnce(ws, "close", () => {
-              clearTimeout(timeout);
+              clearTimeout(t);
               resolve();
             });
           });
         }
-        if (ws.readyState !== OPEN) {
+        if (ws.readyState !== OPEN)
           return;
-        }
+        trace("close_socket.closing");
         await new Promise((resolve) => {
-          let settled = false;
-          const done = () => {
-            if (settled) {
-              return;
+          let done = false;
+          const fin = () => {
+            if (!done) {
+              done = true;
+              resolve();
             }
-            settled = true;
-            resolve();
           };
-          const timeout = setTimeout(done, timeoutMs);
+          const t = setTimeout(fin, timeoutMs);
           socketOnce(ws, "close", () => {
-            clearTimeout(timeout);
-            done();
+            clearTimeout(t);
+            fin();
           });
           socketOnce(ws, "error", () => {
-            clearTimeout(timeout);
-            done();
+            clearTimeout(t);
+            fin();
           });
           try {
             ws.close();
           } catch {
-            clearTimeout(timeout);
-            done();
+            clearTimeout(t);
+            fin();
           }
         });
+        trace("close_socket.done");
       }
     };
     exports.AuraClient = AuraClient;
