@@ -40,7 +40,6 @@ let socketIdleTimer: ReturnType<typeof setTimeout> | null = null;
 let batch: LogPayload[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight = false;
-let sendGivenUp = false;
 
 const deferTask =
   typeof setImmediate === "function"
@@ -119,7 +118,18 @@ function startProjAuthOnce(): void {
   if (projAuthPromise || !projectToken) return;
   const token = projectToken;
   trace("proj_auth.once.start", { tokenPresent: true });
-  projAuthPromise = runProjAuth(token);
+  projAuthPromise = runProjAuth(token)
+    .catch((err) => {
+      console.error(`auralogger: proj_auth failed: ${toErrorMessage(err)}`);
+      trace("proj_auth.once.error", { message: toErrorMessage(err) });
+      return false;
+    })
+    .then((ok) => {
+      // If proj_auth fails, clear the cached promise so a future log() call can
+      // retry instead of being permanently stuck in local-only mode.
+      if (!ok) projAuthPromise = null;
+      return ok;
+    });
 }
 
 function clearSocketIdleTimer(): void {
@@ -263,17 +273,14 @@ async function flushNow(): Promise<void> {
   clearFlushTimer();
   trace("flush.start", { queued: batch.length });
   try {
-    if (sendGivenUp) {
-      batch = [];
-      trace("flush.given_up_drop_all");
-      return;
-    }
     if (!projAuthPromise) return;
     const ok = await projAuthPromise;
     if (!ok || !session) {
+      // proj_auth failed. Drop current batch, but do not permanently disable the
+      // logger — startProjAuthOnce clears the cached promise so a future log()
+      // can retry.
       batch = [];
-      sendGivenUp = true;
-      trace("flush.proj_auth_failed_drop_all", { ok, hasSession: !!session });
+      trace("flush.proj_auth_failed_drop_batch", { ok, hasSession: !!session });
       return;
     }
     const liveSession = session;
@@ -283,10 +290,12 @@ async function flushNow(): Promise<void> {
       trace("flush.slice", { slice: slice.length, remainingBefore: batch.length });
       const sent = await sendBatch(slice);
       if (!sent) {
-        // One attempt, no retry loop. Drop everything and stop until configure() resets.
-        batch = [];
-        sendGivenUp = true;
-        trace("flush.send_failed_drop_all");
+        // Best-effort semantics: drop the slice we tried to send, but keep any
+        // later logs that may have been queued during the send attempt so the
+        // next flush can try again.
+        batch.splice(0, slice.length);
+        trace("flush.send_failed_drop_slice", { dropped: slice.length, remaining: batch.length });
+        if (batch.length > 0) scheduleFlush();
         return;
       }
       batch.splice(0, slice.length);
@@ -336,7 +345,6 @@ function processLog(type: string, message: string, nowMs: number, location?: str
   }
 
   if (!projectToken) return;
-  if (sendGivenUp) return;
 
   startProjAuthOnce();
 
@@ -364,7 +372,6 @@ export class AuraServer {
     session = null;
     styles = undefined;
     projAuthPromise = null;
-    sendGivenUp = false;
     resetBatchState();
 
     if (!trimmedToken) {
@@ -396,7 +403,6 @@ export class AuraServer {
     session = null;
     styles = undefined;
     projAuthPromise = null;
-    sendGivenUp = false;
 
     const payload = await fetchProjAuthConfig(trimmedToken);
     const pid = payload.project_id?.trim() ?? "";
